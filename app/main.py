@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
 from app.agent.orchestrator import handle_chat
+from app.memory.long_term import long_term_memory
 from app.schemas import ChatRequest, ChatResponse, MemoryAddRequest, MemoryResponse, StatusResponse
 
 app = FastAPI(title="Intelligent Travel Planning AI Agent")
@@ -24,19 +25,21 @@ def index() -> HTMLResponse:
 
 @app.post("/chat", response_model=ChatResponse)
 def chat(request: ChatRequest) -> ChatResponse:
-    return handle_chat(request)
+    return handle_chat(request, user_memory=long_term_memory)
 
 
 @app.get("/memory/{user_id}", response_model=MemoryResponse)
 def get_memory(user_id: str) -> MemoryResponse:
-    return MemoryResponse(user_id=user_id, memories=[])
+    return MemoryResponse(user_id=user_id, memories=long_term_memory.get_preferences(user_id))
 
 
 @app.post("/memory/{user_id}", response_model=StatusResponse)
 def add_memory(user_id: str, request: MemoryAddRequest) -> StatusResponse:
-    return StatusResponse(status="memory endpoint scaffolded")
+    long_term_memory.add_preference(user_id, request.preference)
+    return StatusResponse(status="saved")
 
 
 @app.delete("/memory/{user_id}", response_model=StatusResponse)
 def reset_memory(user_id: str) -> StatusResponse:
+    long_term_memory.clear_preferences(user_id)
     return StatusResponse(status="memory cleared")
