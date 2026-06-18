@@ -1,11 +1,15 @@
+import logging
 from typing import Any, Protocol
 from uuid import uuid4
 
 import chromadb
+from chromadb.config import Settings as ChromaSettings
 from pydantic import BaseModel, Field
 
 from app.config import get_settings
 
+
+logging.getLogger("chromadb.telemetry.product.posthog").disabled = True
 
 Metadata = dict[str, str | int | float | bool]
 
@@ -32,7 +36,10 @@ class VectorStore:
         self.path = path or get_settings().chroma_path
         self.embedding_model_name = embedding_model_name
         self._embedder = embedder
-        self._client = chromadb.PersistentClient(path=self.path)
+        self._client = chromadb.PersistentClient(
+            path=self.path,
+            settings=ChromaSettings(anonymized_telemetry=False),
+        )
 
     def get_or_create_collection(self, name: str):
         return self._client.get_or_create_collection(name=name, embedding_function=None)

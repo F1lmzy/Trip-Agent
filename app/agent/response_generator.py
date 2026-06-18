@@ -1,4 +1,6 @@
 import json
+import queue
+import threading
 from typing import Any
 
 import httpx
@@ -22,7 +24,12 @@ def generate_itinerary_response(
     settings = get_settings()
     resolved_model = model or settings.openrouter_model
     messages = build_itinerary_messages(parsed, plan, tool_outputs, memory_used)
-    llm_result = call_openrouter(messages, api_key=api_key, model=resolved_model, client=client)
+    llm_result = _call_openrouter_with_deadline(
+        messages=messages,
+        api_key=api_key,
+        model=resolved_model,
+        client=client,
+    )
 
     itinerary = _fallback_itinerary(parsed, tool_outputs)
     rag_trace = _extract_rag_trace(tool_outputs)
@@ -42,6 +49,32 @@ def generate_itinerary_response(
         needs_clarification=False,
         clarifying_question=None,
     )
+
+
+def _call_openrouter_with_deadline(
+    messages: list[dict[str, str]],
+    api_key: str | None,
+    model: str | None,
+    client: httpx.Client | None,
+    timeout_seconds: float = 12.0,
+) -> dict[str, Any]:
+    result_queue: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=1)
+
+    def worker() -> None:
+        result_queue.put(call_openrouter(messages, api_key=api_key, model=model, client=client))
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+    try:
+        return result_queue.get(timeout=timeout_seconds)
+    except queue.Empty:
+        return {
+            "status": "fallback_openrouter_timeout",
+            "source": "fallback",
+            "model": model,
+            "content": None,
+            "message": "OpenRouter timed out while generating a response.",
+        }
 
 
 def build_itinerary_messages(

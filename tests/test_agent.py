@@ -156,11 +156,22 @@ def test_openrouter_client_missing_key_returns_fallback(monkeypatch):
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     get_settings.cache_clear()
 
-    result = call_openrouter([{"role": "user", "content": "hello"}], api_key=None, model="test-model")
+    result = call_openrouter([{"role": "user", "content": "hello"}], api_key="", model="test-model")
 
     assert result["status"] == "fallback_missing_api_key"
     assert result["source"] == "fallback"
     assert result["model"] == "test-model"
+    assert result["content"] is None
+
+
+def test_openrouter_client_explicit_empty_key_disables_environment_key(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-env-key")
+    get_settings.cache_clear()
+
+    result = call_openrouter([{"role": "user", "content": "hello"}], api_key="", model="test-model")
+
+    assert result["status"] == "fallback_missing_api_key"
+    assert result["source"] == "fallback"
     assert result["content"] is None
 
 
@@ -214,7 +225,7 @@ def test_response_generator_falls_back_without_openrouter_key(monkeypatch):
             "budget_tool": {"budget_level": "medium"},
         },
         memory_used=["I prefer vegetarian food"],
-        api_key=None,
+        api_key="",
         model="test-model",
     )
 

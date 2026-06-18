@@ -16,7 +16,7 @@ def call_openrouter(
     temperature: float = 0.4,
 ) -> dict[str, Any]:
     settings = get_settings()
-    resolved_api_key = api_key or settings.openrouter_api_key
+    resolved_api_key = api_key if api_key is not None else settings.openrouter_api_key
     resolved_model = model or settings.openrouter_model or DEFAULT_OPENROUTER_MODEL
 
     if not resolved_api_key:
@@ -34,11 +34,13 @@ def call_openrouter(
         "model": resolved_model,
         "messages": messages,
         "temperature": temperature,
+        "max_tokens": 900,
     }
 
     try:
         if client is None:
-            with httpx.Client(timeout=30) as owned_client:
+            timeout = httpx.Timeout(20.0, connect=10.0, write=10.0, pool=5.0)
+            with httpx.Client(timeout=timeout) as owned_client:
                 response = owned_client.post(OPENROUTER_CHAT_URL, headers=headers, json=payload)
         else:
             response = client.post(OPENROUTER_CHAT_URL, headers=headers, json=payload)
