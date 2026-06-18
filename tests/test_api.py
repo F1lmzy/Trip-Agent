@@ -21,15 +21,26 @@ def test_index_returns_html():
 
 
 def test_chat_returns_response_shape():
-    response = client.post("/chat", json={"user_id": "kavin", "message": "Plan Tokyo"})
+    response = client.post("/chat", json={"user_id": "api-shape-user", "message": "Plan Tokyo"})
 
     assert response.status_code == 200
     body = response.json()
     assert body["message"]
-    assert isinstance(body["itinerary"], dict)
+    assert body["itinerary"]["city"] == "Tokyo"
     assert isinstance(body["tools_used"], list)
+    assert "attraction_rag_tool" in body["tools_used"]
     assert isinstance(body["plan"], list)
     assert body["needs_clarification"] is False
+
+
+def test_chat_clarifies_when_city_missing():
+    response = client.post("/chat", json={"user_id": "api-clarify-user", "message": "Plan me a trip"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["needs_clarification"] is True
+    assert body["tools_used"] == []
+    assert body["clarifying_question"] == "Which city would you like to visit?"
 
 
 def test_memory_placeholders_return_valid_shapes():

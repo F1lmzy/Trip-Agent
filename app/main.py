@@ -3,6 +3,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
+from app.agent.orchestrator import handle_chat
 from app.schemas import ChatRequest, ChatResponse, MemoryAddRequest, MemoryResponse, StatusResponse
 
 app = FastAPI(title="Intelligent Travel Planning AI Agent")
@@ -23,15 +24,7 @@ def index() -> HTMLResponse:
 
 @app.post("/chat", response_model=ChatResponse)
 def chat(request: ChatRequest) -> ChatResponse:
-    return ChatResponse(
-        message="Travel agent scaffold is running. Full planning will be added next.",
-        itinerary={},
-        memory_used=[],
-        tools_used=[],
-        plan=["Receive chat request", "Return scaffold response"],
-        needs_clarification=False,
-        clarifying_question=None,
-    )
+    return handle_chat(request)
 
 
 @app.get("/memory/{user_id}", response_model=MemoryResponse)
