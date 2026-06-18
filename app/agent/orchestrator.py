@@ -98,7 +98,7 @@ def _execute_tools(parsed: ParsedRequest, plan: PlanningResult, services: AgentS
     if "web_search_tool" in selected_tools:
         tool_outputs["web_search_tool"] = run_web_search_tool(
             parsed.city,
-            query_intent=parsed.raw_message,
+            query_intent=_fresh_travel_search_intent(parsed),
             search_tool=services.web_search_tool,
         )
 
@@ -106,6 +106,11 @@ def _execute_tools(parsed: ParsedRequest, plan: PlanningResult, services: AgentS
         tool_outputs["hotel_tool"] = run_hotel_tool(parsed.city, parsed.budget)
 
     return tool_outputs
+
+
+def _fresh_travel_search_intent(parsed: ParsedRequest) -> str:
+    interests = ", ".join(parsed.interests) if parsed.interests else "highlights, food, markets, neighborhoods"
+    return f"top attractions, specific places, {interests}, {parsed.duration_days} day itinerary"
 
 
 def _build_clarification_response(plan: PlanningResult) -> ChatResponse:

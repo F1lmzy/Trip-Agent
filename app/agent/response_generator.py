@@ -112,7 +112,7 @@ def build_itinerary_messages(
 def _fallback_itinerary(parsed: ParsedRequest, tool_outputs: dict[str, Any]) -> dict[str, Any]:
     city = parsed.city or "your destination"
     duration_days = max(1, parsed.duration_days)
-    attractions = _attraction_names(tool_outputs)
+    attractions = _attraction_names(tool_outputs) or _web_search_place_suggestions(tool_outputs)
     if not attractions:
         attractions = _generic_activity_pool(parsed)
 
@@ -156,6 +156,40 @@ def _fallback_message(parsed: ParsedRequest, status: str) -> str:
 def _attraction_names(tool_outputs: dict[str, Any]) -> list[str]:
     results = tool_outputs.get("attraction_rag_tool", {}).get("results", [])
     return [str(item.get("name")) for item in results if item.get("name")]
+
+
+def _web_search_place_suggestions(tool_outputs: dict[str, Any]) -> list[str]:
+    results = tool_outputs.get("web_search_tool", {}).get("results", [])
+    suggestions: list[str] = []
+    blocked_terms = ["itinerary", "day trip", "days in", "packages", "all inclusive", "last minute"]
+    for result in results:
+        title = str(result.get("title", "")).strip()
+        description = str(result.get("description", "")).strip()
+        if title and not any(term in title.lower() for term in blocked_terms):
+            suggestions.append(title)
+        for phrase in _extract_place_like_phrases(description):
+            if phrase not in suggestions:
+                suggestions.append(phrase)
+    return suggestions[:8]
+
+
+def _extract_place_like_phrases(text: str) -> list[str]:
+    import re
+
+    candidates = re.findall(r"\b(?:[A-Z][A-Za-z'’-]+|of|the|and|&)(?:\s+(?:[A-Z][A-Za-z'’-]+|of|the|and|&)){1,5}\b", text)
+    stop_starts = {"The Best", "How To", "When To", "Where To", "Things To"}
+    phrases: list[str] = []
+    for candidate in candidates:
+        cleaned = " ".join(candidate.split()).strip(" .,:;-/")
+        for prefix in ["Visit ", "Explore ", "See "]:
+            if cleaned.startswith(prefix):
+                cleaned = cleaned[len(prefix) :]
+        if any(cleaned.startswith(stop) for stop in stop_starts):
+            continue
+        if len(cleaned) < 5 or cleaned.lower() in {"travel guide", "day itinerary"}:
+            continue
+        phrases.append(cleaned)
+    return phrases
 
 
 def _generic_activity_pool(parsed: ParsedRequest) -> list[str]:
