@@ -32,13 +32,14 @@ def generate_itinerary_response(
         timeout_seconds=settings.openrouter_timeout_seconds,
     )
 
-    itinerary = _fallback_itinerary(parsed, tool_outputs)
     rag_trace = _extract_rag_trace(tool_outputs)
 
     if llm_result["status"] == "ok" and llm_result.get("content"):
         message = llm_result["content"]
+        itinerary = _itinerary_from_llm_content(parsed, message, tool_outputs)
     else:
         message = _fallback_message(parsed, llm_result["status"])
+        itinerary = _fallback_itinerary(parsed, tool_outputs)
 
     return ChatResponse(
         message=message,
@@ -107,6 +108,47 @@ def build_itinerary_messages(
         {"role": "system", "content": system_message},
         {"role": "user", "content": json.dumps(context, indent=2, sort_keys=True)},
     ]
+
+
+def _itinerary_from_llm_content(parsed: ParsedRequest, content: str, tool_outputs: dict[str, Any]) -> dict[str, Any]:
+    import re
+
+    city = parsed.city or "your destination"
+    duration_days = max(1, parsed.duration_days)
+    itinerary: dict[str, Any] = {
+        "city": city,
+        "duration_days": duration_days,
+        "status": "generated_with_openrouter",
+        "notes": [note for note in [_weather_note(tool_outputs), _budget_note(tool_outputs), _web_search_note(tool_outputs)] if note],
+    }
+
+    fallback = _fallback_itinerary(parsed, tool_outputs)
+    for day in range(1, duration_days + 1):
+        pattern = rf"(?:\*\*)?Day\s+{day}(?:\*\*)?(.+?)(?=(?:\*\*)?Day\s+{day + 1}(?:\*\*)?|$)"
+        match = re.search(pattern, content, flags=re.IGNORECASE | re.DOTALL)
+        if not match:
+            itinerary[f"day_{day}"] = fallback[f"day_{day}"]
+            continue
+
+        section = match.group(1)
+        itinerary[f"day_{day}"] = {
+            "morning": _extract_time_slot(section, "morning") or fallback[f"day_{day}"]["morning"],
+            "afternoon": _extract_time_slot(section, "afternoon") or fallback[f"day_{day}"]["afternoon"],
+            "evening": _extract_time_slot(section, "evening") or fallback[f"day_{day}"]["evening"],
+        }
+
+    return itinerary
+
+
+def _extract_time_slot(section: str, slot: str) -> str | None:
+    import re
+
+    pattern = rf"{slot}\s*:\s*(.+?)(?=(?:morning|afternoon|evening|budget|memory|note)\s*:|\n\s*-|\n\s*\*|$)"
+    match = re.search(pattern, section, flags=re.IGNORECASE | re.DOTALL)
+    if not match:
+        return None
+    value = " ".join(match.group(1).replace("**", "").split()).strip(" -.;")
+    return value or None
 
 
 def _fallback_itinerary(parsed: ParsedRequest, tool_outputs: dict[str, Any]) -> dict[str, Any]:

@@ -252,6 +252,41 @@ def test_response_generator_falls_back_without_openrouter_key(monkeypatch):
     assert "fallback_missing_api_key" in response.message
 
 
+def test_response_generator_structures_itinerary_from_openrouter_text():
+    parsed = parse_user_request("Plan a 2-day trip to Beijing with food.")
+    plan = create_trip_plan(parsed, rag_context_is_weak=True)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": "**Day 1**\n- Morning: Visit Tiananmen Square. Afternoon: Explore Forbidden City. Evening: Eat at Wangfujing.\n\n**Day 2**\n- Morning: Walk the Summer Palace. Afternoon: Visit Temple of Heaven. Evening: Try hutong snacks."
+                        }
+                    }
+                ]
+            },
+        )
+
+    response = generate_itinerary_response(
+        parsed=parsed,
+        plan=plan,
+        tool_outputs={"budget_tool": {"budget_level": "medium"}},
+        memory_used=[],
+        api_key="test-key",
+        model="test-model",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    assert response.itinerary["status"] == "generated_with_openrouter"
+    assert response.itinerary["day_1"]["morning"] == "Visit Tiananmen Square"
+    assert response.itinerary["day_1"]["afternoon"] == "Explore Forbidden City"
+    assert response.itinerary["day_1"]["evening"] == "Eat at Wangfujing"
+    assert response.itinerary["day_2"]["afternoon"] == "Visit Temple of Heaven"
+
+
 def test_response_generator_fallback_matches_requested_duration_and_uses_specific_search_context():
     parsed = parse_user_request("Plan a 4-day trip to Hokkaido with food and nature.")
     plan = create_trip_plan(parsed, rag_context_is_weak=True)
