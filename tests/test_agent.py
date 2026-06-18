@@ -1,4 +1,11 @@
+import httpx
+
+from app.agent.openrouter_client import call_openrouter
 from app.agent.orchestrator import handle_chat
+from app.agent.parser import parse_user_request
+from app.agent.planner import create_trip_plan
+from app.agent.response_generator import generate_itinerary_response
+from app.config import get_settings
 from app.memory.long_term import LongTermMemory
 from app.memory.short_term import ShortTermMemory
 from app.memory.vector_store import VectorStore
@@ -71,3 +78,113 @@ def test_handle_chat_includes_long_term_memory_when_available(tmp_path):
     )
 
     assert "I prefer vegetarian food" in response.memory_used
+
+
+def test_openrouter_client_missing_key_returns_fallback(monkeypatch):
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    get_settings.cache_clear()
+
+    result = call_openrouter([{"role": "user", "content": "hello"}], api_key=None, model="test-model")
+
+    assert result["status"] == "fallback_missing_api_key"
+    assert result["source"] == "fallback"
+    assert result["model"] == "test-model"
+    assert result["content"] is None
+
+
+def test_openrouter_client_calls_api_and_extracts_content():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["Authorization"] == "Bearer test-key"
+        payload = request.read().decode()
+        assert "nvidia/nemotron-3-ultra" in payload
+        assert "Plan Tokyo" in payload
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "Here is your itinerary..."}}]},
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = call_openrouter(
+        [{"role": "user", "content": "Plan Tokyo"}],
+        api_key="test-key",
+        model="nvidia/nemotron-3-ultra",
+        client=client,
+    )
+
+    assert result["status"] == "ok"
+    assert result["source"] == "openrouter"
+    assert result["content"] == "Here is your itinerary..."
+
+
+def test_openrouter_client_api_error_returns_fallback():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, json={"error": "server error"})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = call_openrouter([{"role": "user", "content": "hello"}], api_key="test-key", client=client)
+
+    assert result["status"] == "fallback_api_error"
+    assert result["source"] == "fallback"
+    assert result["content"] is None
+
+
+def test_response_generator_falls_back_without_openrouter_key(monkeypatch):
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    get_settings.cache_clear()
+    parsed = parse_user_request("Plan a 2-day trip to Tokyo with anime and food.")
+    plan = create_trip_plan(parsed)
+
+    response = generate_itinerary_response(
+        parsed=parsed,
+        plan=plan,
+        tool_outputs={
+            "attraction_rag_tool": {"results": [{"name": "Akihabara"}], "rag_trace": {"hop_1": [], "hop_2": []}},
+            "budget_tool": {"budget_level": "medium"},
+        },
+        memory_used=["I prefer vegetarian food"],
+        api_key=None,
+        model="test-model",
+    )
+
+    assert response.itinerary["day_1"]["morning"]
+    assert response.itinerary["day_2"]["evening"]
+    assert response.tools_used == plan.selected_tools
+    assert response.memory_used == ["I prefer vegetarian food"]
+    assert "fallback_missing_api_key" in response.message
+
+
+def test_response_generator_includes_context_in_openrouter_prompt():
+    parsed = parse_user_request("Plan a 2-day trip to Tokyo with anime and food.")
+    plan = create_trip_plan(parsed)
+    tool_outputs = {
+        "attraction_rag_tool": {
+            "results": [{"name": "Akihabara"}],
+            "rag_trace": {"hop_1": [{"summary": "Tokyo overview"}], "hop_2": [{"summary": "Akihabara anime"}]},
+        },
+        "weather_tool": {"forecast": [{"summary": "Clear", "outdoor_suitability": "good"}]},
+        "budget_tool": {"budget_level": "medium"},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = request.read().decode()
+        assert "Tokyo" in payload
+        assert "Akihabara" in payload
+        assert "Tokyo overview" in payload
+        assert "I like museums" in payload
+        assert "Generate a structured itinerary" in payload
+        return httpx.Response(200, json={"choices": [{"message": {"content": "LLM itinerary"}}]})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    response = generate_itinerary_response(
+        parsed=parsed,
+        plan=plan,
+        tool_outputs=tool_outputs,
+        memory_used=["I like museums"],
+        api_key="test-key",
+        model="test-model",
+        client=client,
+    )
+
+    assert response.message == "LLM itinerary"
+    assert response.itinerary["day_1"]["morning"]
+    assert response.rag_trace == tool_outputs["attraction_rag_tool"]["rag_trace"]
