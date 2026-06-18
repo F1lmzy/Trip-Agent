@@ -34,7 +34,7 @@ def call_openrouter(
         "model": resolved_model,
         "messages": messages,
         "temperature": temperature,
-        "max_tokens": 900,
+        "max_tokens": 1800,
     }
 
     try:

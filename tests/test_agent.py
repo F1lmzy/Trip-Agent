@@ -252,6 +252,41 @@ def test_response_generator_falls_back_without_openrouter_key(monkeypatch):
     assert "fallback_missing_api_key" in response.message
 
 
+def test_response_generator_parses_bold_markdown_openrouter_slots():
+    parsed = parse_user_request("Plan a 2-day trip to Beijing with food.")
+    plan = create_trip_plan(parsed, rag_context_is_weak=True)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": "**Day 1**\n- **Morning**: Explore **Wangfujing Snack Street**.\n- **Afternoon**: Visit **Temple of Heaven**.\n- **Evening**: Dine at **Dongzhimen Night Market**.\n\n**Day 2**\n- **Morning**: Walk **Beihai Park**.\n- **Afternoon**: Visit **Summer Palace**.\n- **Evening**: Try **Peking Duck**."
+                        }
+                    }
+                ]
+            },
+        )
+
+    response = generate_itinerary_response(
+        parsed=parsed,
+        plan=plan,
+        tool_outputs={"budget_tool": {"budget_level": "medium"}},
+        memory_used=[],
+        api_key="test-key",
+        model="test-model",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    assert response.itinerary["status"] == "generated_with_openrouter"
+    assert response.itinerary["day_1"]["morning"] == "Explore Wangfujing Snack Street"
+    assert response.itinerary["day_1"]["afternoon"] == "Visit Temple of Heaven"
+    assert response.itinerary["day_1"]["evening"] == "Dine at Dongzhimen Night Market"
+    assert response.itinerary["day_2"]["evening"] == "Try Peking Duck"
+
+
 def test_response_generator_structures_itinerary_from_openrouter_text():
     parsed = parse_user_request("Plan a 2-day trip to Beijing with food.")
     plan = create_trip_plan(parsed, rag_context_is_weak=True)

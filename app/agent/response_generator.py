@@ -143,7 +143,9 @@ def _itinerary_from_llm_content(parsed: ParsedRequest, content: str, tool_output
 def _extract_time_slot(section: str, slot: str) -> str | None:
     import re
 
-    pattern = rf"{slot}\s*:\s*(.+?)(?=(?:morning|afternoon|evening|budget|memory|note)\s*:|\n\s*-|\n\s*\*|$)"
+    label = rf"\*{{0,2}}\s*{slot}\s*\*{{0,2}}\s*:"
+    next_label = r"\*{0,2}\s*(?:morning|afternoon|evening|budget|memory|note)\s*\*{0,2}\s*:"
+    pattern = rf"{label}\s*(.+?)(?=(?:{next_label})|\n\s*-\s*\*{{0,2}}(?:Morning|Afternoon|Evening|Budget|Memory|Note)\*{{0,2}}\s*:|\n\s*\*|$)"
     match = re.search(pattern, section, flags=re.IGNORECASE | re.DOTALL)
     if not match:
         return None
