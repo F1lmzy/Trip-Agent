@@ -39,6 +39,9 @@ def test_index_returns_html():
 
     assert response.status_code == 200
     assert "Travel Planning Agent" in response.text
+    assert "Tools used" in response.text
+    assert "Planning steps" in response.text
+    assert "RAG trace" in response.text
 
 
 def test_chat_returns_response_shape(monkeypatch, tmp_path):

@@ -5,41 +5,483 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Travel Planning Agent</title>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; background: #f8fafc; color: #0f172a; }
-    main { background: white; border: 1px solid #e2e8f0; border-radius: 16px; padding: 1.5rem; box-shadow: 0 8px 30px rgba(15, 23, 42, 0.08); }
-    label { display: block; font-weight: 700; margin-top: 1rem; }
-    input, textarea, button { width: 100%; box-sizing: border-box; font: inherit; margin-top: 0.4rem; }
-    input, textarea { border: 1px solid #cbd5e1; border-radius: 10px; padding: 0.75rem; }
-    button { border: 0; border-radius: 10px; padding: 0.85rem; background: #2563eb; color: white; font-weight: 700; cursor: pointer; margin-top: 1rem; }
-    pre { background: #0f172a; color: #e2e8f0; padding: 1rem; border-radius: 10px; overflow: auto; }
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f9;
+      --surface: #ffffff;
+      --surface-muted: #f1f5f9;
+      --text: #111827;
+      --muted: #64748b;
+      --border: #d8dee8;
+      --accent: #0f766e;
+      --accent-hover: #115e59;
+      --danger: #b91c1c;
+      --code-bg: #0f172a;
+      --code-text: #e5edf6;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.5;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .page {
+      width: min(1120px, 100%);
+      margin: 0 auto;
+      padding: 1rem;
+    }
+
+    header {
+      padding: 1.5rem 0 1rem;
+    }
+
+    h1, h2, h3 { line-height: 1.2; margin: 0; }
+    h1 { font-size: clamp(1.8rem, 4vw, 2.6rem); letter-spacing: -0.03em; }
+    h2 { font-size: 1.1rem; }
+    h3 { font-size: 1rem; }
+    p { margin: 0.5rem 0 0; color: var(--muted); }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1rem;
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      padding: 1rem;
+    }
+
+    label {
+      display: block;
+      margin-top: 1rem;
+      font-weight: 700;
+    }
+
+    input, textarea, button {
+      width: 100%;
+      font: inherit;
+      margin-top: 0.4rem;
+    }
+
+    input, textarea {
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      padding: 0.75rem;
+      background: #fff;
+      color: var(--text);
+    }
+
+    input:focus, textarea:focus, button:focus-visible {
+      outline: 3px solid rgba(15, 118, 110, 0.25);
+      outline-offset: 2px;
+      border-color: var(--accent);
+    }
+
+    button {
+      border: 0;
+      border-radius: 0.5rem;
+      padding: 0.8rem 1rem;
+      background: var(--accent);
+      color: white;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button:hover { background: var(--accent-hover); }
+    button:disabled { cursor: not-allowed; opacity: 0.65; }
+
+    .examples {
+      display: grid;
+      gap: 0.5rem;
+      margin-top: 1rem;
+    }
+
+    .example-button {
+      text-align: left;
+      background: var(--surface-muted);
+      color: var(--text);
+      border: 1px solid var(--border);
+      font-weight: 600;
+    }
+
+    .example-button:hover { background: #e9eef5; }
+
+    .response-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .status {
+      border-radius: 999px;
+      padding: 0.25rem 0.6rem;
+      background: var(--surface-muted);
+      color: var(--muted);
+      font-size: 0.85rem;
+      white-space: nowrap;
+    }
+
+    .assistant-message {
+      border-left: 4px solid var(--accent);
+      padding: 0.75rem 1rem;
+      background: #eef8f6;
+      border-radius: 0.5rem;
+      white-space: pre-wrap;
+    }
+
+    .sections {
+      display: grid;
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      padding: 1rem;
+      background: var(--surface);
+    }
+
+    .itinerary-grid {
+      display: grid;
+      gap: 0.75rem;
+      margin-top: 0.75rem;
+    }
+
+    .day-card {
+      background: var(--surface-muted);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      padding: 1rem;
+    }
+
+    .slot {
+      margin-top: 0.75rem;
+    }
+
+    .slot strong {
+      display: block;
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 0.75rem;
+      padding: 0;
+      list-style: none;
+    }
+
+    .chip {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 0.3rem 0.6rem;
+      background: var(--surface-muted);
+      font-size: 0.9rem;
+    }
+
+    ol, ul { margin: 0.75rem 0 0; padding-left: 1.25rem; }
+    li + li { margin-top: 0.35rem; }
+
+    details {
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      padding: 0.8rem 1rem;
+      background: var(--surface);
+    }
+
+    details + details { margin-top: 0.75rem; }
+    summary { cursor: pointer; font-weight: 700; }
+
+    pre {
+      margin: 0.75rem 0 0;
+      padding: 1rem;
+      overflow: auto;
+      border-radius: 0.5rem;
+      background: var(--code-bg);
+      color: var(--code-text);
+      font-size: 0.9rem;
+    }
+
+    .empty {
+      padding: 2rem 1rem;
+      text-align: center;
+      color: var(--muted);
+      border: 1px dashed var(--border);
+      border-radius: 0.75rem;
+      background: var(--surface);
+    }
+
+    .error {
+      color: var(--danger);
+      background: #fef2f2;
+      border-color: #fecaca;
+    }
+
+    @media (min-width: 900px) {
+      .page { padding: 2rem; }
+      .layout { grid-template-columns: 360px 1fr; align-items: start; }
+      .input-panel { position: sticky; top: 1rem; }
+      .itinerary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
   </style>
 </head>
 <body>
-  <main>
-    <h1>Travel Planning Agent</h1>
-    <p>Ask for a personalized 2-day itinerary. Example: “Plan a 2-day trip to Tokyo. I like anime, food, and photography. Medium budget.”</p>
-    <label for="user-id">User ID</label>
-    <input id="user-id" value="kavin" />
-    <label for="message">Message</label>
-    <textarea id="message" rows="4">Plan a 2-day trip to Tokyo. I like anime, food, and photography. Medium budget.</textarea>
-    <button id="send">Send</button>
-    <h2>Response</h2>
-    <pre id="output">Waiting for a request...</pre>
+  <main class="page">
+    <header>
+      <h1>Travel Planning Agent</h1>
+      <p>Plan a short trip with visible tool use, planning steps, memory, and multi-hop RAG trace.</p>
+    </header>
+
+    <div class="layout">
+      <section class="panel input-panel" aria-labelledby="request-title">
+        <h2 id="request-title">Trip request</h2>
+        <form id="chat-form">
+          <label for="user-id">User ID</label>
+          <input id="user-id" name="user-id" value="kavin" autocomplete="username" required />
+
+          <label for="message">Message</label>
+          <textarea id="message" name="message" rows="6" required>Plan a 2-day trip to Tokyo. I like anime, food, and photography. Medium budget.</textarea>
+
+          <button id="send" type="submit">Generate itinerary</button>
+        </form>
+
+        <div class="examples" aria-label="Example prompts">
+          <button class="example-button" type="button" data-prompt="Plan a 2-day trip to Tokyo. I like anime, food, and photography. Medium budget.">Tokyo anime + food</button>
+          <button class="example-button" type="button" data-prompt="Plan a Singapore trip with current events, latest food spots, and vegetarian options.">Singapore current info</button>
+          <button class="example-button" type="button" data-prompt="Plan a Paris trip with museums and suggest hotels. Luxury budget.">Paris hotels</button>
+          <button class="example-button" type="button" data-prompt="Plan me a trip">Clarification example</button>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="response-title">
+        <div class="response-header">
+          <div>
+            <h2 id="response-title">Response</h2>
+            <p id="response-help">Submit a request to see the itinerary, selected tools, plan, and RAG trace.</p>
+          </div>
+          <span id="status" class="status">Idle</span>
+        </div>
+        <div id="output" class="empty" role="status">Waiting for a request.</div>
+      </section>
+    </div>
   </main>
+
   <script>
+    const form = document.getElementById('chat-form');
     const output = document.getElementById('output');
-    document.getElementById('send').addEventListener('click', async () => {
-      output.textContent = 'Loading...';
-      const response = await fetch('/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: document.getElementById('user-id').value,
-          message: document.getElementById('message').value
-        })
+    const statusBadge = document.getElementById('status');
+    const sendButton = document.getElementById('send');
+    const messageInput = document.getElementById('message');
+
+    document.querySelectorAll('[data-prompt]').forEach((button) => {
+      button.addEventListener('click', () => {
+        messageInput.value = button.dataset.prompt;
+        messageInput.focus();
       });
-      output.textContent = JSON.stringify(await response.json(), null, 2);
     });
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      setLoading(true);
+
+      try {
+        const response = await fetch('/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: document.getElementById('user-id').value.trim(),
+            message: messageInput.value.trim()
+          })
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.detail || 'Request failed.');
+        }
+        renderResponse(data);
+        statusBadge.textContent = data.needs_clarification ? 'Needs clarification' : 'Complete';
+      } catch (error) {
+        output.className = 'card error';
+        output.innerHTML = `<h3>Request failed</h3><p>${escapeHtml(error.message)}</p>`;
+        statusBadge.textContent = 'Error';
+      } finally {
+        setLoading(false);
+      }
+    });
+
+    function setLoading(isLoading) {
+      sendButton.disabled = isLoading;
+      sendButton.textContent = isLoading ? 'Generating…' : 'Generate itinerary';
+      if (isLoading) {
+        statusBadge.textContent = 'Working';
+        output.className = 'empty';
+        output.textContent = 'Running planner and selected tools…';
+      }
+    }
+
+    function renderResponse(data) {
+      output.className = 'sections';
+      output.innerHTML = '';
+      output.appendChild(messageSection(data));
+
+      if (data.needs_clarification) {
+        output.appendChild(simpleCard('Clarifying question', data.clarifying_question || data.message));
+        output.appendChild(rawDetails(data));
+        return;
+      }
+
+      output.appendChild(itinerarySection(data.itinerary || {}));
+      output.appendChild(listSection('Tools used', data.tools_used || [], 'No tools were selected.'));
+      output.appendChild(listSection('Planning steps', data.plan || [], 'No plan steps returned.', true));
+      output.appendChild(listSection('Memory used', data.memory_used || [], 'No long-term memories were used.'));
+      output.appendChild(ragTraceSection(data.rag_trace || {}));
+      output.appendChild(rawDetails(data));
+    }
+
+    function messageSection(data) {
+      const section = document.createElement('section');
+      section.className = 'card';
+      section.innerHTML = `<h3>Assistant message</h3><div class="assistant-message">${escapeHtml(data.message || '')}</div>`;
+      return section;
+    }
+
+    function itinerarySection(itinerary) {
+      const section = document.createElement('section');
+      section.className = 'card';
+      const city = itinerary.city ? ` for ${escapeHtml(itinerary.city)}` : '';
+      section.innerHTML = `<h3>Itinerary${city}</h3>`;
+
+      const grid = document.createElement('div');
+      grid.className = 'itinerary-grid';
+      ['day_1', 'day_2'].forEach((dayKey, index) => {
+        if (itinerary[dayKey]) {
+          grid.appendChild(dayCard(`Day ${index + 1}`, itinerary[dayKey]));
+        }
+      });
+
+      if (grid.children.length === 0) {
+        const pre = document.createElement('pre');
+        pre.textContent = JSON.stringify(itinerary, null, 2);
+        section.appendChild(pre);
+      } else {
+        section.appendChild(grid);
+      }
+
+      if (Array.isArray(itinerary.notes) && itinerary.notes.length) {
+        section.appendChild(listElement(itinerary.notes, false, 'Notes'));
+      }
+      return section;
+    }
+
+    function dayCard(title, day) {
+      const article = document.createElement('article');
+      article.className = 'day-card';
+      article.innerHTML = `<h4>${title}</h4>`;
+      ['morning', 'afternoon', 'evening'].forEach((slot) => {
+        const value = day[slot];
+        if (!value) return;
+        const div = document.createElement('div');
+        div.className = 'slot';
+        div.innerHTML = `<strong>${slot}</strong><span>${escapeHtml(String(value))}</span>`;
+        article.appendChild(div);
+      });
+      return article;
+    }
+
+    function listSection(title, items, emptyText, ordered = false) {
+      const section = document.createElement('section');
+      section.className = 'card';
+      section.innerHTML = `<h3>${escapeHtml(title)}</h3>`;
+      if (!items.length) {
+        const p = document.createElement('p');
+        p.textContent = emptyText;
+        section.appendChild(p);
+        return section;
+      }
+      section.appendChild(listElement(items, ordered));
+      return section;
+    }
+
+    function listElement(items, ordered = false, label = '') {
+      const wrapper = document.createElement('div');
+      if (label) wrapper.innerHTML = `<h4>${escapeHtml(label)}</h4>`;
+      const list = document.createElement(ordered ? 'ol' : 'ul');
+      items.forEach((item) => {
+        const li = document.createElement('li');
+        li.textContent = typeof item === 'string' ? item : JSON.stringify(item);
+        list.appendChild(li);
+      });
+      wrapper.appendChild(list);
+      return wrapper;
+    }
+
+    function ragTraceSection(ragTrace) {
+      const section = document.createElement('section');
+      section.className = 'card';
+      section.innerHTML = '<h3>RAG trace</h3>';
+      const hopNames = [['hop_1', 'Hop 1: city context'], ['hop_2', 'Hop 2: personalized attractions']];
+      hopNames.forEach(([key, label]) => {
+        const details = document.createElement('details');
+        details.open = key === 'hop_1';
+        details.innerHTML = `<summary>${label}</summary>`;
+        const results = ragTrace[key] || [];
+        if (!results.length) {
+          const p = document.createElement('p');
+          p.textContent = 'No trace entries returned.';
+          details.appendChild(p);
+        } else {
+          const list = document.createElement('ul');
+          results.forEach((entry) => {
+            const li = document.createElement('li');
+            li.textContent = entry.summary || entry.id || JSON.stringify(entry);
+            list.appendChild(li);
+          });
+          details.appendChild(list);
+        }
+        section.appendChild(details);
+      });
+      return section;
+    }
+
+    function simpleCard(title, text) {
+      const section = document.createElement('section');
+      section.className = 'card';
+      section.innerHTML = `<h3>${escapeHtml(title)}</h3><p>${escapeHtml(text)}</p>`;
+      return section;
+    }
+
+    function rawDetails(data) {
+      const details = document.createElement('details');
+      details.innerHTML = '<summary>Raw JSON response</summary>';
+      const pre = document.createElement('pre');
+      pre.textContent = JSON.stringify(data, null, 2);
+      details.appendChild(pre);
+      return details;
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+    }
   </script>
 </body>
 </html>
