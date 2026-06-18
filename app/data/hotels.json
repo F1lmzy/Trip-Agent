@@ -1,0 +1,98 @@
+[
+  {
+    "city": "Tokyo",
+    "name": "Asakusa Budget Stay",
+    "budget_level": "low",
+    "price_per_night": 70,
+    "area": "Asakusa",
+    "description": "Simple budget hotel near temples, local food, and transit."
+  },
+  {
+    "city": "Tokyo",
+    "name": "Shibuya Central Hotel",
+    "budget_level": "medium",
+    "price_per_night": 165,
+    "area": "Shibuya",
+    "description": "Convenient mid-range hotel near nightlife, shopping, and train connections."
+  },
+  {
+    "city": "Tokyo",
+    "name": "Ginza Premier Tower",
+    "budget_level": "luxury",
+    "price_per_night": 420,
+    "area": "Ginza",
+    "description": "Luxury hotel with polished service, dining, and central shopping access."
+  },
+  {
+    "city": "Singapore",
+    "name": "Chinatown Pod Inn",
+    "budget_level": "low",
+    "price_per_night": 75,
+    "area": "Chinatown",
+    "description": "Budget-friendly stay near hawker food, MRT access, and heritage streets."
+  },
+  {
+    "city": "Singapore",
+    "name": "Marina Central Hotel",
+    "budget_level": "medium",
+    "price_per_night": 170,
+    "area": "Marina Bay",
+    "description": "Comfortable mid-range hotel near museums, waterfront walks, and food courts."
+  },
+  {
+    "city": "Singapore",
+    "name": "Bayfront Signature Suites",
+    "budget_level": "luxury",
+    "price_per_night": 460,
+    "area": "Marina Bay",
+    "description": "Luxury property with skyline views, premium dining, and bay access."
+  },
+  {
+    "city": "Paris",
+    "name": "Latin Quarter Guesthouse",
+    "budget_level": "low",
+    "price_per_night": 95,
+    "area": "Latin Quarter",
+    "description": "Affordable guesthouse near student cafes, bookshops, and historic streets."
+  },
+  {
+    "city": "Paris",
+    "name": "Saint-Germain Boutique Hotel",
+    "budget_level": "medium",
+    "price_per_night": 210,
+    "area": "Saint-Germain",
+    "description": "Mid-range boutique hotel near museums, cafes, and central walks."
+  },
+  {
+    "city": "Paris",
+    "name": "Rive Droite Palace Hotel",
+    "budget_level": "luxury",
+    "price_per_night": 620,
+    "area": "1st arrondissement",
+    "description": "Luxury hotel close to high-end dining, the Louvre, and classic Paris sights."
+  },
+  {
+    "city": "New York",
+    "name": "Long Island City Budget Hotel",
+    "budget_level": "low",
+    "price_per_night": 120,
+    "area": "Long Island City",
+    "description": "Lower-cost stay with subway access to Manhattan and skyline views nearby."
+  },
+  {
+    "city": "New York",
+    "name": "Chelsea Market Hotel",
+    "budget_level": "medium",
+    "price_per_night": 260,
+    "area": "Chelsea",
+    "description": "Mid-range hotel near food halls, galleries, the High Line, and transit."
+  },
+  {
+    "city": "New York",
+    "name": "Central Park Luxe",
+    "budget_level": "luxury",
+    "price_per_night": 690,
+    "area": "Central Park South",
+    "description": "Luxury hotel near Central Park, museums, fine dining, and premium shopping."
+  }
+]
