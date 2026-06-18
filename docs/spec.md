@@ -56,7 +56,6 @@ Environment variables:
 OPENROUTER_API_KEY=...
 OPENROUTER_MODEL=nvidia/nemotron-3-ultra
 OPENWEATHER_API_KEY=...
-BRAVE_SEARCH_API_KEY=...
 CHROMA_PATH=./chroma_db
 ```
 
@@ -220,7 +219,7 @@ Minimum required dynamic tools:
    - Performs multi-hop RAG over curated city documents and attraction data.
 
 3. `web_search_tool`
-   - Uses Brave Search API to retrieve fresh destination context, travel tips, events, closures, or recent recommendations.
+   - Uses LangChain DuckDuckGo search tool to retrieve fresh destination context, travel tips, events, closures, or recent recommendations.
    - Called when the local RAG knowledge base has weak coverage, when the user asks for current information, or when the itinerary would benefit from up-to-date external context.
 
 4. `budget_tool`
@@ -460,7 +459,7 @@ The feature is complete when:
 - The chat response includes a visible planning `plan`.
 - The chat response includes multi-hop RAG trace/summaries.
 - OpenWeatherMap is used for real weather when `OPENWEATHER_API_KEY` is configured.
-- Brave Search API is used for fresh web context when `BRAVE_SEARCH_API_KEY` is configured.
+- LangChain DuckDuckGo search tool is used for fresh web context and requires no API key.
 - ChromaDB and sentence-transformers are used for RAG and long-term memory.
 - User preferences persist across sessions through ChromaDB.
 - Vague requests trigger clarifying questions.
@@ -475,7 +474,7 @@ None currently. Key decisions confirmed:
 
 - OpenRouter model: `nvidia/nemotron-3-ultra`
 - Weather API: OpenWeatherMap
-- Web search API: Brave Search API
+- Web search API: LangChain DuckDuckGo search tool
 - Vector database: ChromaDB
 - Embeddings: sentence-transformers
 - Frontend: minimal HTML served by FastAPI

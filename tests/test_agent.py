@@ -11,7 +11,7 @@ from app.memory.short_term import ShortTermMemory
 from app.memory.vector_store import VectorStore
 from app.tools.attraction_rag_tool import AttractionRagTool
 from app.schemas import ChatRequest
-from tests.fakes import FakeEmbedder
+from tests.fakes import FakeEmbedder, FakeSearchTool
 
 
 def make_long_term_memory(tmp_path) -> LongTermMemory:
@@ -22,6 +22,7 @@ def make_services(tmp_path) -> AgentServices:
     rag_store = VectorStore(path=str(tmp_path / "rag"), embedder=FakeEmbedder())
     return AgentServices(
         attraction_rag_tool=AttractionRagTool(vector_store=rag_store),
+        web_search_tool=FakeSearchTool(),
         use_environment=False,
     )
 

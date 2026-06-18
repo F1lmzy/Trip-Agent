@@ -11,7 +11,7 @@ Build the project in vertical slices so each phase leaves a runnable FastAPI app
 - **ChromaDB + sentence-transformers:** used both for attraction RAG and long-term preference memory.
 - **OpenRouter for final response generation:** default model is `nvidia/nemotron-3-ultra`, with graceful fallback if the API is unavailable.
 - **OpenWeatherMap for real weather:** external calls are isolated in `weather_tool.py` and mocked in tests.
-- **Brave Search tool as optional dynamic enrichment:** called only for current/recent information or weak local RAG coverage.
+- **DuckDuckGo search tool as optional dynamic enrichment:** called only for current/recent information or weak local RAG coverage.
 - **Minimal static frontend:** plain HTML/CSS/JS served from FastAPI, no frontend build step.
 
 ## Dependency Graph
@@ -50,7 +50,7 @@ Project config + schemas
 **Acceptance criteria:**
 - [ ] Project directories match the spec.
 - [ ] `requirements.txt` includes FastAPI, Uvicorn, Pydantic, requests/httpx, ChromaDB, sentence-transformers, pytest, and related test dependencies.
-- [ ] `.env.example` documents `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `OPENWEATHER_API_KEY`, `BRAVE_SEARCH_API_KEY`, and `CHROMA_PATH`.
+- [ ] `.env.example` documents `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `OPENWEATHER_API_KEY`, and `CHROMA_PATH`; DuckDuckGo search requires no API key.
 
 **Verification:**
 - [ ] Run: `python -m compileall app`
@@ -297,16 +297,16 @@ Project config + schemas
 
 ---
 
-## Task 10: Implement Brave Search web search tool
+## Task 10: Implement DuckDuckGo search web search tool
 
-**Description:** Add a Brave Search API wrapper for fresh travel context. Keep it isolated with a safe fallback when no API key is available.
+**Description:** Add a LangChain DuckDuckGo search tool wrapper for fresh travel context. Keep it isolated with a safe fallback when search is unavailable.
 
 **Acceptance criteria:**
-- [ ] Tool accepts city and query intent, returning compact Brave Search result summaries.
-- [ ] Tool reads `BRAVE_SEARCH_API_KEY` from environment/config.
+- [ ] Tool accepts city and query intent, returning compact DuckDuckGo search result summaries.
+- [ ] Tool uses LangChain Community's DuckDuckGo search integration and requires no API key.
 - [ ] Tool is called only when planner selects it.
-- [ ] Missing API credentials or Brave API failure returns graceful fallback.
-- [ ] Tests mock Brave Search and verify routing behavior.
+- [ ] Missing dependencies or DuckDuckGo search failure returns graceful fallback.
+- [ ] Tests mock DuckDuckGo search and verify routing behavior.
 
 **Verification:**
 - [ ] Run: `pytest -q tests/test_tools.py tests/test_planner.py`
@@ -484,7 +484,7 @@ Project config + schemas
 | ChromaDB/sentence-transformers install is heavy on Render free tier | Medium | Keep dependencies minimal; document expected cold start; use small embedding model such as `all-MiniLM-L6-v2`. |
 | OpenRouter model name/provider availability changes | Medium | Make model configurable via `OPENROUTER_MODEL`; include fallback response generator. |
 | OpenWeatherMap free tier/date forecast limitations | Low | Use current/near-term forecast and document limitation. |
-| Brave Search API key may be missing or rate-limited | Medium | Isolate behind `web_search_tool`; support graceful fallback and mocked tests. |
+| DuckDuckGo search may be unavailable or rate-limited | Medium | Isolate behind `web_search_tool`; support graceful fallback and mocked tests. |
 | LLM output may be unstructured | Medium | Prompt for JSON-like structure, validate lightly, and fallback to deterministic itinerary format. |
 | Parser may miss unusual city names | Medium | Start with regex/rule extraction; fallback to LLM generalization in response generator if needed. |
 | Long-term memory may store one-off details | Medium | Implement stable-preference filters and avoid storing dates/hotel names. |
@@ -511,4 +511,4 @@ Needs coordination:
 
 ## Open Questions
 
-None currently. Web search provider is confirmed as Brave Search API using `BRAVE_SEARCH_API_KEY`.
+None currently. Web search provider is confirmed as LangChain DuckDuckGo search, which requires no API key.

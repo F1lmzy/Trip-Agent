@@ -6,7 +6,7 @@ from app.agent.orchestrator import AgentServices
 from app.memory.long_term import LongTermMemory
 from app.memory.vector_store import VectorStore
 from app.tools.attraction_rag_tool import AttractionRagTool
-from tests.fakes import FakeEmbedder
+from tests.fakes import FakeEmbedder, FakeSearchTool
 
 
 client = TestClient(app)
@@ -21,6 +21,7 @@ def install_test_long_term_memory(monkeypatch, tmp_path) -> LongTermMemory:
 def install_test_agent_services(monkeypatch, tmp_path) -> AgentServices:
     services = AgentServices(
         attraction_rag_tool=AttractionRagTool(VectorStore(path=str(tmp_path / "rag"), embedder=FakeEmbedder())),
+        web_search_tool=FakeSearchTool(),
         use_environment=False,
     )
     monkeypatch.setattr(main_module, "agent_services", services)

@@ -1,6 +1,18 @@
 import hashlib
 
 
+class FakeSearchTool:
+    def __init__(self, results: list[dict[str, str]] | None = None) -> None:
+        self.results = results or [
+            {"title": "Current travel guide", "link": "https://example.com/travel", "snippet": "Fresh travel context."}
+        ]
+        self.queries: list[str] = []
+
+    def invoke(self, query: str):
+        self.queries.append(query)
+        return self.results
+
+
 class FakeEmbedder:
     def encode(self, texts: list[str], normalize_embeddings: bool = True) -> list[list[float]]:
         return [self._embed(text) for text in texts]

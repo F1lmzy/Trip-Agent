@@ -1,3 +1,4 @@
+import pytest
 import httpx
 
 from app.tools.budget_tool import run_budget_tool
@@ -153,74 +154,67 @@ def test_weather_tool_marks_rain_as_poor_outdoor_suitability():
     assert result["forecast"][0]["outdoor_suitability"] == "poor"
 
 
-def test_web_search_tool_missing_api_key_returns_fallback():
-    result = run_web_search_tool("Tokyo", "current events", api_key=None)
+class FakeDuckDuckGoTool:
+    def __init__(self, results):
+        self.results = results
+        self.queries = []
 
-    assert result["tool_name"] == "web_search_tool"
-    assert result["status"] == "fallback_missing_api_key"
-    assert result["city"] == "Tokyo"
-    assert result["source"] == "fallback"
-    assert result["query"] == "Tokyo current events travel"
-    assert result["results"] == []
+    def invoke(self, query: str):
+        self.queries.append(query)
+        return self.results
 
 
-def test_web_search_tool_calls_brave_and_normalizes_results():
-    def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.params["q"] == "Tokyo current events travel"
-        assert request.url.params["count"] == "3"
-        assert request.headers["X-Subscription-Token"] == "test-key"
-        return httpx.Response(
-            200,
-            json={
-                "web": {
-                    "results": [
-                        {
-                            "title": "Tokyo event guide",
-                            "url": "https://example.com/tokyo",
-                            "description": "Recent Tokyo travel events.",
-                        },
-                        {
-                            "title": "Tokyo museum closure update",
-                            "url": "https://example.com/museums",
-                            "description": "Latest travel closure details.",
-                        },
-                    ]
-                }
+class FailingDuckDuckGoTool:
+    def invoke(self, query: str):
+        raise RuntimeError("search failed")
+
+
+def test_web_search_tool_calls_langchain_duckduckgo_and_normalizes_results():
+    search_tool = FakeDuckDuckGoTool(
+        [
+            {
+                "title": "Tokyo event guide",
+                "link": "https://example.com/tokyo",
+                "snippet": "Recent Tokyo travel events.",
             },
-        )
+            {
+                "title": "Tokyo museum closure update",
+                "href": "https://example.com/museums",
+                "body": "Latest travel closure details.",
+            },
+        ]
+    )
 
-    client = httpx.Client(transport=httpx.MockTransport(handler))
-    result = run_web_search_tool("Tokyo", "current events", api_key="test-key", count=3, client=client)
+    result = run_web_search_tool("Tokyo", "current events", count=3, search_tool=search_tool)
 
     assert result["status"] == "ok"
-    assert result["source"] == "brave_search"
+    assert result["source"] == "duckduckgo_langchain"
     assert result["query"] == "Tokyo current events travel"
+    assert search_tool.queries == ["Tokyo current events travel"]
     assert result["results"][0] == {
         "title": "Tokyo event guide",
         "url": "https://example.com/tokyo",
         "description": "Recent Tokyo travel events.",
     }
+    assert result["results"][1]["url"] == "https://example.com/museums"
 
 
-def test_web_search_tool_limits_count_to_brave_maximum():
-    def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.params["count"] == "20"
-        return httpx.Response(200, json={"web": {"results": []}})
+def test_web_search_tool_handles_langchain_tuple_output():
+    search_tool = FakeDuckDuckGoTool(
+        ([{"title": "Paris guide", "link": "https://example.com/paris", "snippet": "Paris update."}], [])
+    )
 
-    client = httpx.Client(transport=httpx.MockTransport(handler))
-    result = run_web_search_tool("Paris", "latest museum closures", api_key="test-key", count=50, client=client)
+    result = run_web_search_tool("Paris", "latest museum closures", search_tool=search_tool)
 
     assert result["status"] == "ok"
-    assert result["results"] == []
+    assert result["results"] == [
+        {"title": "Paris guide", "url": "https://example.com/paris", "description": "Paris update."}
+    ]
 
 
-def test_web_search_tool_api_error_returns_fallback():
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(500, json={"message": "server error"})
+def test_web_search_tool_search_error_returns_fallback():
+    result = run_web_search_tool("Tokyo", "current events", search_tool=FailingDuckDuckGoTool())
 
-    client = httpx.Client(transport=httpx.MockTransport(handler))
-    result = run_web_search_tool("Tokyo", "current events", api_key="test-key", client=client)
-
-    assert result["status"] == "fallback_api_error"
+    assert result["status"] == "fallback_search_error"
     assert result["source"] == "fallback"
     assert result["results"] == []

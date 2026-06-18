@@ -11,7 +11,7 @@ A FastAPI travel-planning agent that creates personalized 2-day itineraries with
   - `attraction_rag_tool` for multi-hop city and attraction retrieval
   - `weather_tool` using OpenWeatherMap
   - `budget_tool` for low/medium/luxury guidance
-  - `web_search_tool` using Brave Search for current or recent context
+  - `web_search_tool` using LangChain's DuckDuckGo search integration for current or recent context
   - `hotel_tool` for lodging requests
 - Short-term in-process conversation memory
 - Long-term ChromaDB user preference memory
@@ -39,9 +39,9 @@ FastAPI app (`app/main.py`)
 - Optional API keys for best results:
   - OpenRouter
   - OpenWeatherMap
-  - Brave Search
+- DuckDuckGo search through LangChain Community does not require an API key.
 
-The app still runs without API keys. Missing external credentials produce graceful fallback responses.
+The app still runs without API keys. Missing external credentials or search/network failures produce graceful fallback responses.
 
 ## Environment variables
 
@@ -52,7 +52,6 @@ Copy `.env.example` to `.env` for local development.
 | `OPENROUTER_API_KEY` | OpenRouter LLM generation | No, fallback itinerary is used |
 | `OPENROUTER_MODEL` | OpenRouter model name | No, defaults to `nvidia/nemotron-3-ultra` |
 | `OPENWEATHER_API_KEY` | OpenWeatherMap forecast tool | No, weather fallback is used |
-| `BRAVE_SEARCH_API_KEY` | Brave Search web search tool | No, search fallback is used |
 | `CHROMA_PATH` | Local ChromaDB persistence path | No, defaults to `./chroma_db` |
 
 ## Local setup
@@ -199,7 +198,6 @@ Add environment variables in Render:
 OPENROUTER_API_KEY=<your OpenRouter key>
 OPENROUTER_MODEL=nvidia/nemotron-3-ultra
 OPENWEATHER_API_KEY=<your OpenWeatherMap key>
-BRAVE_SEARCH_API_KEY=<your Brave Search key>
 CHROMA_PATH=/opt/render/project/src/chroma_db
 ```
 
@@ -228,7 +226,7 @@ Mount the disk at:
 - OpenWeatherMap forecast is near-term, not a full future travel-date forecast.
 - Local ChromaDB data is not committed and may reset on cloud redeploys without a persistent disk.
 - The parser is deterministic and may miss unusual phrasing or uncommon cities.
-- Missing API keys produce fallback output, which is useful for demos but less rich than live API output.
+- Missing API keys produce fallback output for OpenRouter and OpenWeatherMap. DuckDuckGo search does not require an API key, but it can still fail due to network or rate-limit issues.
 - `sentence-transformers` and `chromadb` make installs and cold starts heavier than a basic FastAPI app.
 
 ## Project structure

@@ -21,10 +21,9 @@ from app.tools.web_search_tool import run_web_search_tool
 class AgentServices:
     attraction_rag_tool: AttractionRagTool | None = None
     weather_client: httpx.Client | None = None
-    web_search_client: httpx.Client | None = None
+    web_search_tool: Any | None = None
     openrouter_client: httpx.Client | None = None
     openweather_api_key: str | None = None
-    brave_search_api_key: str | None = None
     openrouter_api_key: str | None = None
     openrouter_model: str | None = None
     use_environment: bool = True
@@ -100,8 +99,7 @@ def _execute_tools(parsed: ParsedRequest, plan: PlanningResult, services: AgentS
         tool_outputs["web_search_tool"] = run_web_search_tool(
             parsed.city,
             query_intent=parsed.raw_message,
-            api_key=_service_value(services, "brave_search_api_key", "brave_search_api_key"),
-            client=services.web_search_client,
+            search_tool=services.web_search_tool,
         )
 
     if "hotel_tool" in selected_tools:
