@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Travel Planning Agent</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; background: #f8fafc; color: #0f172a; }
+    main { background: white; border: 1px solid #e2e8f0; border-radius: 16px; padding: 1.5rem; box-shadow: 0 8px 30px rgba(15, 23, 42, 0.08); }
+    label { display: block; font-weight: 700; margin-top: 1rem; }
+    input, textarea, button { width: 100%; box-sizing: border-box; font: inherit; margin-top: 0.4rem; }
+    input, textarea { border: 1px solid #cbd5e1; border-radius: 10px; padding: 0.75rem; }
+    button { border: 0; border-radius: 10px; padding: 0.85rem; background: #2563eb; color: white; font-weight: 700; cursor: pointer; margin-top: 1rem; }
+    pre { background: #0f172a; color: #e2e8f0; padding: 1rem; border-radius: 10px; overflow: auto; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Travel Planning Agent</h1>
+    <p>Ask for a personalized 2-day itinerary. Example: “Plan a 2-day trip to Tokyo. I like anime, food, and photography. Medium budget.”</p>
+    <label for="user-id">User ID</label>
+    <input id="user-id" value="kavin" />
+    <label for="message">Message</label>
+    <textarea id="message" rows="4">Plan a 2-day trip to Tokyo. I like anime, food, and photography. Medium budget.</textarea>
+    <button id="send">Send</button>
+    <h2>Response</h2>
+    <pre id="output">Waiting for a request...</pre>
+  </main>
+  <script>
+    const output = document.getElementById('output');
+    document.getElementById('send').addEventListener('click', async () => {
+      output.textContent = 'Loading...';
+      const response = await fetch('/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: document.getElementById('user-id').value,
+          message: document.getElementById('message').value
+        })
+      });
+      output.textContent = JSON.stringify(await response.json(), null, 2);
+    });
+  </script>
+</body>
+</html>
