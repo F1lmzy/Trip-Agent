@@ -1,5 +1,8 @@
+import httpx
+
 from app.tools.budget_tool import run_budget_tool
 from app.tools.hotel_tool import load_hotels, run_hotel_tool
+from app.tools.weather_tool import run_weather_tool
 
 
 def test_budget_tool_defaults_to_medium_when_missing():
@@ -59,3 +62,91 @@ def test_hotel_tool_unknown_city_returns_no_results():
     assert result["city"] == "Atlantis"
     assert result["budget_level"] == "low"
     assert result["results"] == []
+
+
+def test_weather_tool_missing_api_key_returns_fallback():
+    result = run_weather_tool("Tokyo", api_key=None)
+
+    assert result["tool_name"] == "weather_tool"
+    assert result["status"] == "fallback_missing_api_key"
+    assert result["city"] == "Tokyo"
+    assert result["source"] == "fallback"
+    assert result["forecast"]
+
+
+def test_weather_tool_calls_openweathermap_and_normalizes_forecast():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.params["q"] == "Tokyo"
+        assert request.url.params["appid"] == "test-key"
+        return httpx.Response(
+            200,
+            json={
+                "list": [
+                    {
+                        "dt_txt": "2026-06-18 09:00:00",
+                        "main": {"temp": 24.0, "feels_like": 24.5, "humidity": 70},
+                        "weather": [{"main": "Clear"}],
+                        "wind": {"speed": 2.0},
+                    },
+                    {
+                        "dt_txt": "2026-06-18 12:00:00",
+                        "main": {"temp": 26.0, "feels_like": 26.5, "humidity": 60},
+                        "weather": [{"main": "Clear"}],
+                        "wind": {"speed": 4.0},
+                    },
+                    {
+                        "dt_txt": "2026-06-19 09:00:00",
+                        "main": {"temp": 22.0, "feels_like": 22.2, "humidity": 80},
+                        "weather": [{"main": "Clouds"}],
+                        "wind": {"speed": 3.0},
+                    },
+                ]
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = run_weather_tool("Tokyo", api_key="test-key", client=client)
+
+    assert result["status"] == "ok"
+    assert result["source"] == "openweathermap"
+    assert result["forecast"][0]["date"] == "2026-06-18"
+    assert result["forecast"][0]["summary"] == "Clear"
+    assert result["forecast"][0]["temperature_c"] == 25.0
+    assert result["forecast"][0]["feels_like_c"] == 25.5
+    assert result["forecast"][0]["humidity"] == 65.0
+    assert result["forecast"][0]["wind_speed"] == 3.0
+    assert result["forecast"][0]["outdoor_suitability"] == "good"
+
+
+def test_weather_tool_api_error_returns_fallback():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, json={"message": "server error"})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = run_weather_tool("Tokyo", api_key="test-key", client=client)
+
+    assert result["status"] == "fallback_api_error"
+    assert result["source"] == "fallback"
+    assert result["forecast"]
+
+
+def test_weather_tool_marks_rain_as_poor_outdoor_suitability():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "list": [
+                    {
+                        "dt_txt": "2026-06-18 09:00:00",
+                        "main": {"temp": 24.0, "feels_like": 24.5, "humidity": 90},
+                        "weather": [{"main": "Rain"}],
+                        "wind": {"speed": 4.0},
+                    }
+                ]
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = run_weather_tool("Tokyo", api_key="test-key", client=client)
+
+    assert result["forecast"][0]["outdoor_suitability"] == "poor"
