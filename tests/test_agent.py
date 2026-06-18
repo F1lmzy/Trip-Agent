@@ -228,6 +228,7 @@ def test_openrouter_client_api_error_returns_fallback():
 
 def test_response_generator_falls_back_without_openrouter_key(monkeypatch):
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.setenv("OPENROUTER_TIMEOUT_SECONDS", "45")
     get_settings.cache_clear()
     parsed = parse_user_request("Plan a 2-day trip to Tokyo with anime and food.")
     plan = create_trip_plan(parsed)

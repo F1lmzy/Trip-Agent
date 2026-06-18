@@ -51,6 +51,7 @@ Copy `.env.example` to `.env` for local development.
 |---|---|---:|
 | `OPENROUTER_API_KEY` | OpenRouter LLM generation | No, fallback itinerary is used |
 | `OPENROUTER_MODEL` | OpenRouter model name | No, defaults to `nvidia/nemotron-3-ultra` |
+| `OPENROUTER_TIMEOUT_SECONDS` | Max time to wait for OpenRouter before using fallback | No, defaults to `45` |
 | `OPENWEATHER_API_KEY` | OpenWeatherMap forecast tool | No, weather fallback is used |
 | `CHROMA_PATH` | Local ChromaDB persistence path | No, defaults to `./chroma_db` |
 

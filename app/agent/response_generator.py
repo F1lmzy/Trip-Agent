@@ -29,6 +29,7 @@ def generate_itinerary_response(
         api_key=api_key,
         model=resolved_model,
         client=client,
+        timeout_seconds=settings.openrouter_timeout_seconds,
     )
 
     itinerary = _fallback_itinerary(parsed, tool_outputs)
@@ -56,7 +57,7 @@ def _call_openrouter_with_deadline(
     api_key: str | None,
     model: str | None,
     client: httpx.Client | None,
-    timeout_seconds: float = 12.0,
+    timeout_seconds: float = 45.0,
 ) -> dict[str, Any]:
     result_queue: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=1)
 
