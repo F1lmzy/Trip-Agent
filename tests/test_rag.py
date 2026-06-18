@@ -14,7 +14,7 @@ def test_rag_seed_data_includes_demo_cities():
     docs = load_attraction_documents()
     cities = {doc["city"] for doc in docs}
 
-    assert {"Tokyo", "Singapore", "Paris", "New York"} <= cities
+    assert {"Tokyo", "Singapore", "Paris", "New York", "Mumbai"} <= cities
 
 
 def test_rag_hop_1_retrieves_city_overview(tmp_path):
@@ -46,6 +46,17 @@ def test_rag_filters_results_by_city(tmp_path):
 
     assert "Louvre Museum" in names
     assert "Akihabara" not in names
+
+
+def test_rag_supports_mumbai_food_and_culture(tmp_path):
+    tool = make_tool(tmp_path)
+
+    result = tool.run(city="mumbai", interests=["food", "culture", "photography"])
+    names = {item["name"] for item in result["results"]}
+
+    assert result["status"] == "ok"
+    assert "Gateway of India and Colaba" in names
+    assert names & {"Marine Drive and Girgaum Chowpatty", "Bandra West and Bandstand"}
 
 
 def test_rag_unknown_city_returns_empty_result(tmp_path):

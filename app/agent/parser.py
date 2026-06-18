@@ -8,6 +8,7 @@ KNOWN_CITIES = [
     "Singapore",
     "Paris",
     "New York",
+    "Mumbai",
     "London",
     "Rome",
     "Barcelona",
@@ -100,12 +101,12 @@ def _extract_city(message: str) -> str | None:
             return city
 
     patterns = [
-        r"(?:trip to|visit|in|for)\s+([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)?)",
+        r"(?:trip to|visit|in|for)\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)",
     ]
     for pattern in patterns:
-        match = re.search(pattern, message)
+        match = re.search(pattern, message, flags=re.IGNORECASE)
         if match:
-            return match.group(1).strip()
+            return match.group(1).strip().title()
     return None
 
 

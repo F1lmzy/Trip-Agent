@@ -3,7 +3,11 @@
     "id": "tokyo-akihabara",
     "city": "Tokyo",
     "name": "Akihabara",
-    "category": ["anime", "shopping", "gaming"],
+    "category": [
+      "anime",
+      "shopping",
+      "gaming"
+    ],
     "description": "Akihabara is known for anime, manga, gaming, arcades, electronics shops, and themed cafes.",
     "estimated_time_hours": 3,
     "indoor": true,
@@ -13,7 +17,11 @@
     "id": "tokyo-tsukiji",
     "city": "Tokyo",
     "name": "Tsukiji Outer Market",
-    "category": ["food", "photography", "markets"],
+    "category": [
+      "food",
+      "photography",
+      "markets"
+    ],
     "description": "Tsukiji Outer Market has seafood stalls, street food, kitchenware shops, and lively market scenes for food photography.",
     "estimated_time_hours": 2,
     "indoor": false,
@@ -23,7 +31,11 @@
     "id": "tokyo-sensoji",
     "city": "Tokyo",
     "name": "Senso-ji Temple",
-    "category": ["culture", "history", "photography"],
+    "category": [
+      "culture",
+      "history",
+      "photography"
+    ],
     "description": "Senso-ji Temple in Asakusa is a historic temple area with traditional shopping streets and strong photography opportunities.",
     "estimated_time_hours": 2,
     "indoor": false,
@@ -33,7 +45,11 @@
     "id": "tokyo-shibuya-sky",
     "city": "Tokyo",
     "name": "Shibuya Sky",
-    "category": ["photography", "views", "nightlife"],
+    "category": [
+      "photography",
+      "views",
+      "nightlife"
+    ],
     "description": "Shibuya Sky and nearby Shibuya Crossing offer skyline views, city lights, and iconic urban photography spots.",
     "estimated_time_hours": 2,
     "indoor": false,
@@ -43,7 +59,11 @@
     "id": "tokyo-ueno",
     "city": "Tokyo",
     "name": "Ueno Park and Tokyo National Museum",
-    "category": ["museums", "nature", "culture"],
+    "category": [
+      "museums",
+      "nature",
+      "culture"
+    ],
     "description": "Ueno combines a large park, museums, gardens, and cultural attractions including Tokyo National Museum.",
     "estimated_time_hours": 4,
     "indoor": true,
@@ -53,7 +73,11 @@
     "id": "singapore-gardens-bay",
     "city": "Singapore",
     "name": "Gardens by the Bay",
-    "category": ["nature", "photography", "architecture"],
+    "category": [
+      "nature",
+      "photography",
+      "architecture"
+    ],
     "description": "Gardens by the Bay offers Supertrees, waterfront walks, conservatories, and dramatic photography locations.",
     "estimated_time_hours": 4,
     "indoor": false,
@@ -63,7 +87,11 @@
     "id": "singapore-national-gallery",
     "city": "Singapore",
     "name": "National Gallery Singapore",
-    "category": ["museums", "art", "culture"],
+    "category": [
+      "museums",
+      "art",
+      "culture"
+    ],
     "description": "National Gallery Singapore is an indoor museum focused on Southeast Asian art inside restored civic buildings.",
     "estimated_time_hours": 3,
     "indoor": true,
@@ -73,7 +101,11 @@
     "id": "singapore-lau-pa-sat",
     "city": "Singapore",
     "name": "Lau Pa Sat",
-    "category": ["food", "budget", "culture"],
+    "category": [
+      "food",
+      "budget",
+      "culture"
+    ],
     "description": "Lau Pa Sat is a famous hawker centre for affordable local food and satay in a historic market building.",
     "estimated_time_hours": 2,
     "indoor": true,
@@ -83,7 +115,11 @@
     "id": "singapore-botanic-gardens",
     "city": "Singapore",
     "name": "Singapore Botanic Gardens",
-    "category": ["nature", "relaxed", "photography"],
+    "category": [
+      "nature",
+      "relaxed",
+      "photography"
+    ],
     "description": "Singapore Botanic Gardens is a UNESCO-listed green space suited to relaxed walks, orchids, nature, and photos.",
     "estimated_time_hours": 3,
     "indoor": false,
@@ -93,7 +129,11 @@
     "id": "singapore-acm",
     "city": "Singapore",
     "name": "Asian Civilisations Museum",
-    "category": ["museums", "culture", "history"],
+    "category": [
+      "museums",
+      "culture",
+      "history"
+    ],
     "description": "Asian Civilisations Museum is an indoor museum exploring Asian cultures, trade, religion, and regional history.",
     "estimated_time_hours": 2,
     "indoor": true,
@@ -103,7 +143,11 @@
     "id": "paris-louvre",
     "city": "Paris",
     "name": "Louvre Museum",
-    "category": ["museums", "art", "history"],
+    "category": [
+      "museums",
+      "art",
+      "history"
+    ],
     "description": "The Louvre Museum is a major indoor art and history museum with the Mona Lisa, classical sculpture, and palace architecture.",
     "estimated_time_hours": 4,
     "indoor": true,
@@ -113,7 +157,11 @@
     "id": "paris-montmartre",
     "city": "Paris",
     "name": "Montmartre",
-    "category": ["photography", "culture", "food"],
+    "category": [
+      "photography",
+      "culture",
+      "food"
+    ],
     "description": "Montmartre has hilltop views, cafes, artists, Sacre-Coeur, winding streets, culture, food, and photography spots.",
     "estimated_time_hours": 3,
     "indoor": false,
@@ -123,7 +171,11 @@
     "id": "paris-trocadero",
     "city": "Paris",
     "name": "Eiffel Tower and Trocadero",
-    "category": ["photography", "views", "architecture"],
+    "category": [
+      "photography",
+      "views",
+      "architecture"
+    ],
     "description": "Trocadero and the Eiffel Tower are classic Paris viewpoints for architecture, skyline photos, and evening views.",
     "estimated_time_hours": 2,
     "indoor": false,
@@ -133,7 +185,11 @@
     "id": "paris-latin-quarter",
     "city": "Paris",
     "name": "Latin Quarter",
-    "category": ["food", "history", "culture"],
+    "category": [
+      "food",
+      "history",
+      "culture"
+    ],
     "description": "The Latin Quarter is known for historic streets, bookshops, student life, casual restaurants, and cultural walks.",
     "estimated_time_hours": 3,
     "indoor": false,
@@ -143,7 +199,11 @@
     "id": "paris-luxembourg-gardens",
     "city": "Paris",
     "name": "Luxembourg Gardens",
-    "category": ["nature", "relaxed", "photography"],
+    "category": [
+      "nature",
+      "relaxed",
+      "photography"
+    ],
     "description": "Luxembourg Gardens is a relaxed park with fountains, tree-lined paths, sculptures, and classic Paris photo scenes.",
     "estimated_time_hours": 2,
     "indoor": false,
@@ -153,7 +213,11 @@
     "id": "new-york-met",
     "city": "New York",
     "name": "Metropolitan Museum of Art",
-    "category": ["museums", "art", "history"],
+    "category": [
+      "museums",
+      "art",
+      "history"
+    ],
     "description": "The Metropolitan Museum of Art is a large indoor museum with global art, ancient history, fashion, and architecture collections.",
     "estimated_time_hours": 4,
     "indoor": true,
@@ -163,7 +227,11 @@
     "id": "new-york-central-park",
     "city": "New York",
     "name": "Central Park",
-    "category": ["nature", "photography", "relaxed"],
+    "category": [
+      "nature",
+      "photography",
+      "relaxed"
+    ],
     "description": "Central Park offers lakes, walking paths, skyline views, lawns, bridges, and classic photography spots.",
     "estimated_time_hours": 3,
     "indoor": false,
@@ -173,7 +241,11 @@
     "id": "new-york-times-square",
     "city": "New York",
     "name": "Times Square and Broadway",
-    "category": ["nightlife", "photography", "theater"],
+    "category": [
+      "nightlife",
+      "photography",
+      "theater"
+    ],
     "description": "Times Square and Broadway are known for bright lights, theater, nightlife, crowds, and urban photography.",
     "estimated_time_hours": 3,
     "indoor": false,
@@ -183,7 +255,11 @@
     "id": "new-york-chelsea-market",
     "city": "New York",
     "name": "Chelsea Market",
-    "category": ["food", "shopping", "markets"],
+    "category": [
+      "food",
+      "shopping",
+      "markets"
+    ],
     "description": "Chelsea Market is an indoor food hall and shopping destination near the High Line with casual food options.",
     "estimated_time_hours": 2,
     "indoor": true,
@@ -193,9 +269,86 @@
     "id": "new-york-dumbo",
     "city": "New York",
     "name": "Brooklyn Bridge and DUMBO",
-    "category": ["photography", "views", "walking"],
+    "category": [
+      "photography",
+      "views",
+      "walking"
+    ],
     "description": "Brooklyn Bridge and DUMBO provide skyline views, waterfront walks, bridge architecture, and famous photo locations.",
     "estimated_time_hours": 3,
+    "indoor": false,
+    "budget_level": "low"
+  },
+  {
+    "id": "mumbai-gateway-colaba",
+    "city": "Mumbai",
+    "name": "Gateway of India and Colaba",
+    "category": [
+      "culture",
+      "history",
+      "photography",
+      "food"
+    ],
+    "description": "Gateway of India and Colaba combine waterfront views, colonial-era architecture, street photography, cafes, and easy access to Kala Ghoda.",
+    "estimated_time_hours": 3,
+    "indoor": false,
+    "budget_level": "low"
+  },
+  {
+    "id": "mumbai-elephanta-caves",
+    "city": "Mumbai",
+    "name": "Elephanta Caves",
+    "category": [
+      "history",
+      "culture",
+      "nature"
+    ],
+    "description": "Elephanta Caves are UNESCO-listed rock-cut cave temples reached by ferry, combining history, sculpture, harbor views, and a half-day excursion.",
+    "estimated_time_hours": 5,
+    "indoor": false,
+    "budget_level": "medium"
+  },
+  {
+    "id": "mumbai-bandra",
+    "city": "Mumbai",
+    "name": "Bandra West and Bandstand",
+    "category": [
+      "food",
+      "shopping",
+      "nightlife",
+      "photography"
+    ],
+    "description": "Bandra West offers cafes, boutiques, street art, Bandstand promenade, nightlife, and coastal sunset photography.",
+    "estimated_time_hours": 4,
+    "indoor": false,
+    "budget_level": "medium"
+  },
+  {
+    "id": "mumbai-csmvs-kala-ghoda",
+    "city": "Mumbai",
+    "name": "CSMVS Museum and Kala Ghoda",
+    "category": [
+      "museums",
+      "art",
+      "culture",
+      "history"
+    ],
+    "description": "Chhatrapati Shivaji Maharaj Vastu Sangrahalaya and Kala Ghoda offer indoor museum time, art galleries, heritage architecture, and walkable cafes.",
+    "estimated_time_hours": 4,
+    "indoor": true,
+    "budget_level": "medium"
+  },
+  {
+    "id": "mumbai-marine-drive-chowpatty",
+    "city": "Mumbai",
+    "name": "Marine Drive and Girgaum Chowpatty",
+    "category": [
+      "food",
+      "photography",
+      "nature"
+    ],
+    "description": "Marine Drive and Girgaum Chowpatty are classic Mumbai evening spots for sea views, street snacks, sunset photos, and relaxed walking.",
+    "estimated_time_hours": 2,
     "indoor": false,
     "budget_level": "low"
   }

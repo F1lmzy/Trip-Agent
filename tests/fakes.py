@@ -20,5 +20,6 @@ class FakeEmbedder:
             float("singapore" in normalized),
             float("paris" in normalized),
             float("new york" in normalized or "brooklyn" in normalized or "manhattan" in normalized),
+            float("mumbai" in normalized or "colaba" in normalized or "bandra" in normalized),
             float(int(hashlib.sha1(normalized.encode()).hexdigest()[:2], 16)) / 255.0,
         ]

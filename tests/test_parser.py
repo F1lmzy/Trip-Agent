@@ -33,6 +33,14 @@ def test_missing_city_has_no_city():
     assert parsed.duration_days == 2
 
 
+def test_parse_lowercase_mumbai_city():
+    parsed = parse_user_request("I want to visit mumbai for 2 days with food and culture.")
+
+    assert parsed.city == "Mumbai"
+    assert parsed.duration_days == 2
+    assert set(parsed.interests) >= {"food", "culture"}
+
+
 def test_parse_hotel_intent():
     parsed = parse_user_request("Plan a trip to Paris and recommend a hotel or place to stay.")
 
