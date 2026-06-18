@@ -251,6 +251,32 @@ def test_response_generator_falls_back_without_openrouter_key(monkeypatch):
     assert "fallback_missing_api_key" in response.message
 
 
+def test_response_generator_fallback_matches_requested_duration_and_does_not_use_search_titles_as_activities():
+    parsed = parse_user_request("Plan a 4-day trip to Hokkaido with food and nature.")
+    plan = create_trip_plan(parsed, rag_context_is_weak=True)
+
+    response = generate_itinerary_response(
+        parsed=parsed,
+        plan=plan,
+        tool_outputs={
+            "web_search_tool": {
+                "results": [
+                    {"title": "3 Days in Hokkaido: The Best Short Trip Itinerary", "url": "https://example.com", "description": "Guide"}
+                ]
+            },
+            "budget_tool": {"budget_level": "medium"},
+        },
+        memory_used=[],
+        api_key="",
+        model="test-model",
+    )
+
+    assert response.itinerary["duration_days"] == 4
+    assert "day_4" in response.itinerary
+    assert "3 Days in Hokkaido" not in response.itinerary["day_1"]["morning"]
+    assert any("3 Days in Hokkaido" in note for note in response.itinerary["notes"])
+
+
 def test_response_generator_includes_context_in_openrouter_prompt():
     parsed = parse_user_request("Plan a 2-day trip to Tokyo with anime and food.")
     plan = create_trip_plan(parsed)

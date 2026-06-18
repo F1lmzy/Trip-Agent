@@ -99,8 +99,7 @@ def build_itinerary_messages(
         "tool_outputs": tool_outputs,
         "rag_trace": _extract_rag_trace(tool_outputs),
         "required_format": {
-            "day_1": ["morning", "afternoon", "evening"],
-            "day_2": ["morning", "afternoon", "evening"],
+            f"day_{day}": ["morning", "afternoon", "evening"] for day in range(1, parsed.duration_days + 1)
         },
     }
     return [
@@ -111,9 +110,10 @@ def build_itinerary_messages(
 
 def _fallback_itinerary(parsed: ParsedRequest, tool_outputs: dict[str, Any]) -> dict[str, Any]:
     city = parsed.city or "your destination"
-    attractions = _attraction_names(tool_outputs) or _web_search_titles(tool_outputs)
+    duration_days = max(1, parsed.duration_days)
+    attractions = _attraction_names(tool_outputs)
     if not attractions:
-        attractions = ["a central neighborhood walk", "a local food stop", "a museum or cultural highlight"]
+        attractions = _generic_activity_pool(parsed)
 
     hotel_note = None
     hotel_results = tool_outputs.get("hotel_tool", {}).get("results", [])
@@ -122,23 +122,26 @@ def _fallback_itinerary(parsed: ParsedRequest, tool_outputs: dict[str, Any]) -> 
 
     weather_note = _weather_note(tool_outputs)
     budget_note = _budget_note(tool_outputs)
+    web_note = _web_search_note(tool_outputs)
 
-    return {
+    itinerary: dict[str, Any] = {
         "city": city,
-        "duration_days": parsed.duration_days,
+        "duration_days": duration_days,
         "status": "generated_with_fallback_template",
-        "day_1": {
-            "morning": f"Start in {city} with {attractions[0]}.",
-            "afternoon": f"Continue with {attractions[1] if len(attractions) > 1 else 'a nearby cultural stop'}.",
-            "evening": "Choose a dinner area that matches your budget and keep transit simple.",
-        },
-        "day_2": {
-            "morning": f"Visit {attractions[2] if len(attractions) > 2 else 'a relaxed neighborhood highlight'}.",
-            "afternoon": "Add an indoor museum, market, or cafe break depending on the weather.",
-            "evening": "Finish with a viewpoint, walkable food area, or low-stress local experience.",
-        },
-        "notes": [note for note in [weather_note, budget_note, hotel_note] if note],
+        "notes": [note for note in [weather_note, budget_note, hotel_note, web_note] if note],
     }
+
+    for day in range(1, duration_days + 1):
+        first = attractions[(day - 1) * 3 % len(attractions)]
+        second = attractions[((day - 1) * 3 + 1) % len(attractions)]
+        third = attractions[((day - 1) * 3 + 2) % len(attractions)]
+        itinerary[f"day_{day}"] = {
+            "morning": f"Start day {day} in {city} with {first}.",
+            "afternoon": f"Continue with {second}, keeping travel time clustered by neighborhood.",
+            "evening": f"Finish with {third} or a nearby dinner area that matches your budget.",
+        }
+
+    return itinerary
 
 
 def _fallback_message(parsed: ParsedRequest, status: str) -> str:
@@ -154,17 +157,54 @@ def _attraction_names(tool_outputs: dict[str, Any]) -> list[str]:
     return [str(item.get("name")) for item in results if item.get("name")]
 
 
-def _web_search_titles(tool_outputs: dict[str, Any]) -> list[str]:
-    results = tool_outputs.get("web_search_tool", {}).get("results", [])
-    return [str(item.get("title")) for item in results if item.get("title")]
+def _generic_activity_pool(parsed: ParsedRequest) -> list[str]:
+    activities = [
+        "a central neighborhood walk to understand the city layout",
+        "a local food stop or market area",
+        "a cultural landmark or heritage district",
+        "a museum, gallery, or indoor attraction",
+        "a scenic viewpoint, waterfront, park, or relaxed photo stop",
+        "a low-stress evening food area close to your accommodation",
+    ]
+    interest_options = {
+        "food": "a food-focused neighborhood, market, or well-reviewed local dining area",
+        "museums": "a major museum or gallery cluster",
+        "nature": "a park, garden, waterfront, or scenic outdoor area",
+        "culture": "a temple, heritage street, old town, or cultural district",
+        "history": "a historic landmark and nearby walking route",
+        "shopping": "a market, craft district, or shopping street",
+        "nightlife": "an evening district with safe transport back to your stay",
+        "photography": "a viewpoint, waterfront, or photogenic neighborhood",
+    }
+    for interest in reversed(parsed.interests):
+        option = interest_options.get(interest)
+        if option:
+            activities.insert(0, option)
+    return activities
+
+
+def _web_search_note(tool_outputs: dict[str, Any]) -> str | None:
+    web_search = tool_outputs.get("web_search_tool", {})
+    results = web_search.get("results", [])
+    if not results:
+        return None
+    titles = [str(item.get("title")) for item in results[:3] if item.get("title")]
+    if not titles:
+        return None
+    return "Web search context consulted: " + "; ".join(titles) + "."
 
 
 def _weather_note(tool_outputs: dict[str, Any]) -> str | None:
-    forecast = tool_outputs.get("weather_tool", {}).get("forecast", [])
+    weather = tool_outputs.get("weather_tool", {})
+    forecast = weather.get("forecast", [])
     if not forecast:
         return None
     first_day = forecast[0]
-    return f"Weather note: {first_day.get('summary')} with outdoor suitability marked {first_day.get('outdoor_suitability')}."
+    summary = first_day.get("summary")
+    suitability = first_day.get("outdoor_suitability")
+    if weather.get("source") == "fallback":
+        return f"Weather note: {summary} Outdoor suitability is {suitability}."
+    return f"Weather note: {summary} with outdoor suitability marked {suitability}."
 
 
 def _budget_note(tool_outputs: dict[str, Any]) -> str | None:

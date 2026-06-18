@@ -368,11 +368,13 @@
 
       const grid = document.createElement('div');
       grid.className = 'itinerary-grid';
-      ['day_1', 'day_2'].forEach((dayKey, index) => {
-        if (itinerary[dayKey]) {
-          grid.appendChild(dayCard(`Day ${index + 1}`, itinerary[dayKey]));
-        }
-      });
+      Object.keys(itinerary)
+        .filter((key) => /^day_\d+$/.test(key))
+        .sort((a, b) => Number(a.split('_')[1]) - Number(b.split('_')[1]))
+        .forEach((dayKey) => {
+          const dayNumber = Number(dayKey.split('_')[1]);
+          grid.appendChild(dayCard(`Day ${dayNumber}`, itinerary[dayKey]));
+        });
 
       if (grid.children.length === 0) {
         const pre = document.createElement('pre');
