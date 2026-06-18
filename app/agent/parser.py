@@ -106,8 +106,18 @@ def _extract_city(message: str) -> str | None:
     for pattern in patterns:
         match = re.search(pattern, message, flags=re.IGNORECASE)
         if match:
-            return match.group(1).strip().title()
+            return _clean_city_candidate(match.group(1))
     return None
+
+
+def _clean_city_candidate(candidate: str) -> str | None:
+    stop_words = {"with", "for", "from", "on", "and", "or", "that", "where"}
+    words = candidate.strip(" .,!?").split()
+    while words and words[-1].lower() in stop_words:
+        words.pop()
+    if not words:
+        return None
+    return " ".join(words).title()
 
 
 def _extract_duration_days(normalized: str) -> int:

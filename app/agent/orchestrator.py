@@ -10,7 +10,7 @@ from app.config import get_settings
 from app.memory.long_term import LongTermMemory, long_term_memory
 from app.memory.short_term import ShortTermMemory, short_term_memory
 from app.schemas import ChatRequest, ChatResponse
-from app.tools.attraction_rag_tool import AttractionRagTool
+from app.tools.attraction_rag_tool import AttractionRagTool, has_curated_rag_city
 from app.tools.budget_tool import run_budget_tool
 from app.tools.hotel_tool import run_hotel_tool
 from app.tools.weather_tool import run_weather_tool
@@ -42,7 +42,8 @@ def handle_chat(
     services = services or AgentServices()
 
     parsed = parse_user_request(request.message)
-    plan = create_trip_plan(parsed)
+    rag_context_is_weak = parsed.city is not None and not has_curated_rag_city(parsed.city)
+    plan = create_trip_plan(parsed, rag_context_is_weak=rag_context_is_weak)
     has_prior_context = memory.has_history(request.user_id)
 
     if plan.needs_clarification:

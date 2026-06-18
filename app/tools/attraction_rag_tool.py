@@ -34,6 +34,14 @@ def load_city_documents(directory: Path = _CITY_DOCS_DIR) -> list[dict[str, str]
     return docs
 
 
+def supported_rag_cities() -> set[str]:
+    return {doc["city"] for doc in load_city_documents()}
+
+
+def has_curated_rag_city(city: str) -> bool:
+    return _normalize_city(city) in supported_rag_cities()
+
+
 class AttractionRagTool:
     def __init__(self, vector_store: VectorStore | None = None) -> None:
         self.vector_store = vector_store or VectorStore()

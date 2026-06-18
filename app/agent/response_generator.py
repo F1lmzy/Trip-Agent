@@ -111,7 +111,7 @@ def build_itinerary_messages(
 
 def _fallback_itinerary(parsed: ParsedRequest, tool_outputs: dict[str, Any]) -> dict[str, Any]:
     city = parsed.city or "your destination"
-    attractions = _attraction_names(tool_outputs)
+    attractions = _attraction_names(tool_outputs) or _web_search_titles(tool_outputs)
     if not attractions:
         attractions = ["a central neighborhood walk", "a local food stop", "a museum or cultural highlight"]
 
@@ -152,6 +152,11 @@ def _fallback_message(parsed: ParsedRequest, status: str) -> str:
 def _attraction_names(tool_outputs: dict[str, Any]) -> list[str]:
     results = tool_outputs.get("attraction_rag_tool", {}).get("results", [])
     return [str(item.get("name")) for item in results if item.get("name")]
+
+
+def _web_search_titles(tool_outputs: dict[str, Any]) -> list[str]:
+    results = tool_outputs.get("web_search_tool", {}).get("results", [])
+    return [str(item.get("title")) for item in results if item.get("title")]
 
 
 def _weather_note(tool_outputs: dict[str, Any]) -> str | None:

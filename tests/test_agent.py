@@ -111,6 +111,20 @@ def test_handle_chat_includes_long_term_memory_when_available(tmp_path):
     assert "I prefer vegetarian food" in response.memory_used
 
 
+def test_handle_chat_uses_web_search_for_city_without_curated_rag(tmp_path):
+    response = handle_chat(
+        ChatRequest(user_id="kavin", message="Plan a 2-day trip to Kyoto with temples and food."),
+        memory=ShortTermMemory(),
+        user_memory=make_long_term_memory(tmp_path),
+        services=make_services(tmp_path),
+    )
+
+    assert response.needs_clarification is False
+    assert response.itinerary["city"] == "Kyoto"
+    assert "web_search_tool" in response.tools_used
+    assert "attraction_rag_tool" in response.tools_used
+
+
 def test_handle_chat_executes_web_search_for_current_info(tmp_path):
     response = handle_chat(
         ChatRequest(user_id="kavin", message="Plan a Tokyo trip with current events and latest food spots."),

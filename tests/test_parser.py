@@ -33,6 +33,14 @@ def test_missing_city_has_no_city():
     assert parsed.duration_days == 2
 
 
+def test_parse_unknown_city_dynamically_from_trip_phrase():
+    parsed = parse_user_request("Plan a 2-day trip to Kyoto with temples and food.")
+
+    assert parsed.city == "Kyoto"
+    assert parsed.duration_days == 2
+    assert set(parsed.interests) >= {"culture", "food"}
+
+
 def test_parse_lowercase_mumbai_city():
     parsed = parse_user_request("I want to visit mumbai for 2 days with food and culture.")
 
