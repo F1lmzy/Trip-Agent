@@ -3,6 +3,7 @@ import httpx
 from app.tools.budget_tool import run_budget_tool
 from app.tools.hotel_tool import load_hotels, run_hotel_tool
 from app.tools.weather_tool import run_weather_tool
+from app.tools.web_search_tool import run_web_search_tool
 
 
 def test_budget_tool_defaults_to_medium_when_missing():
@@ -150,3 +151,76 @@ def test_weather_tool_marks_rain_as_poor_outdoor_suitability():
     result = run_weather_tool("Tokyo", api_key="test-key", client=client)
 
     assert result["forecast"][0]["outdoor_suitability"] == "poor"
+
+
+def test_web_search_tool_missing_api_key_returns_fallback():
+    result = run_web_search_tool("Tokyo", "current events", api_key=None)
+
+    assert result["tool_name"] == "web_search_tool"
+    assert result["status"] == "fallback_missing_api_key"
+    assert result["city"] == "Tokyo"
+    assert result["source"] == "fallback"
+    assert result["query"] == "Tokyo current events travel"
+    assert result["results"] == []
+
+
+def test_web_search_tool_calls_brave_and_normalizes_results():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.params["q"] == "Tokyo current events travel"
+        assert request.url.params["count"] == "3"
+        assert request.headers["X-Subscription-Token"] == "test-key"
+        return httpx.Response(
+            200,
+            json={
+                "web": {
+                    "results": [
+                        {
+                            "title": "Tokyo event guide",
+                            "url": "https://example.com/tokyo",
+                            "description": "Recent Tokyo travel events.",
+                        },
+                        {
+                            "title": "Tokyo museum closure update",
+                            "url": "https://example.com/museums",
+                            "description": "Latest travel closure details.",
+                        },
+                    ]
+                }
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = run_web_search_tool("Tokyo", "current events", api_key="test-key", count=3, client=client)
+
+    assert result["status"] == "ok"
+    assert result["source"] == "brave_search"
+    assert result["query"] == "Tokyo current events travel"
+    assert result["results"][0] == {
+        "title": "Tokyo event guide",
+        "url": "https://example.com/tokyo",
+        "description": "Recent Tokyo travel events.",
+    }
+
+
+def test_web_search_tool_limits_count_to_brave_maximum():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.params["count"] == "20"
+        return httpx.Response(200, json={"web": {"results": []}})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = run_web_search_tool("Paris", "latest museum closures", api_key="test-key", count=50, client=client)
+
+    assert result["status"] == "ok"
+    assert result["results"] == []
+
+
+def test_web_search_tool_api_error_returns_fallback():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, json={"message": "server error"})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = run_web_search_tool("Tokyo", "current events", api_key="test-key", client=client)
+
+    assert result["status"] == "fallback_api_error"
+    assert result["source"] == "fallback"
+    assert result["results"] == []
