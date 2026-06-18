@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: travel-planning-agent
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: OPENROUTER_MODEL
+        value: nvidia/nemotron-3-ultra
+      - key: CHROMA_PATH
+        value: /opt/render/project/src/chroma_db
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENWEATHER_API_KEY
+        sync: false
+      - key: BRAVE_SEARCH_API_KEY
+        sync: false
