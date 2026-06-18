@@ -3,11 +3,12 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
-from app.agent.orchestrator import handle_chat
+from app.agent.orchestrator import AgentServices, handle_chat
 from app.memory.long_term import long_term_memory
 from app.schemas import ChatRequest, ChatResponse, MemoryAddRequest, MemoryResponse, StatusResponse
 
 app = FastAPI(title="Intelligent Travel Planning AI Agent")
+agent_services = AgentServices()
 
 _STATIC_DIR = Path(__file__).parent / "static"
 
@@ -25,7 +26,7 @@ def index() -> HTMLResponse:
 
 @app.post("/chat", response_model=ChatResponse)
 def chat(request: ChatRequest) -> ChatResponse:
-    return handle_chat(request, user_memory=long_term_memory)
+    return handle_chat(request, user_memory=long_term_memory, services=agent_services)
 
 
 @app.get("/memory/{user_id}", response_model=MemoryResponse)

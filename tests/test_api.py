@@ -2,8 +2,10 @@ from fastapi.testclient import TestClient
 
 import app.main as main_module
 from app.main import app
+from app.agent.orchestrator import AgentServices
 from app.memory.long_term import LongTermMemory
 from app.memory.vector_store import VectorStore
+from app.tools.attraction_rag_tool import AttractionRagTool
 from tests.fakes import FakeEmbedder
 
 
@@ -11,9 +13,18 @@ client = TestClient(app)
 
 
 def install_test_long_term_memory(monkeypatch, tmp_path) -> LongTermMemory:
-    test_memory = LongTermMemory(VectorStore(path=str(tmp_path), embedder=FakeEmbedder()))
+    test_memory = LongTermMemory(VectorStore(path=str(tmp_path / "memory"), embedder=FakeEmbedder()))
     monkeypatch.setattr(main_module, "long_term_memory", test_memory)
     return test_memory
+
+
+def install_test_agent_services(monkeypatch, tmp_path) -> AgentServices:
+    services = AgentServices(
+        attraction_rag_tool=AttractionRagTool(VectorStore(path=str(tmp_path / "rag"), embedder=FakeEmbedder())),
+        use_environment=False,
+    )
+    monkeypatch.setattr(main_module, "agent_services", services)
+    return services
 
 
 def test_health_returns_ok():
@@ -32,6 +43,7 @@ def test_index_returns_html():
 
 def test_chat_returns_response_shape(monkeypatch, tmp_path):
     install_test_long_term_memory(monkeypatch, tmp_path)
+    install_test_agent_services(monkeypatch, tmp_path)
 
     response = client.post("/chat", json={"user_id": "api-shape-user", "message": "Plan Tokyo"})
 
@@ -39,14 +51,19 @@ def test_chat_returns_response_shape(monkeypatch, tmp_path):
     body = response.json()
     assert body["message"]
     assert body["itinerary"]["city"] == "Tokyo"
+    assert body["itinerary"]["day_1"]["morning"]
     assert isinstance(body["tools_used"], list)
     assert "attraction_rag_tool" in body["tools_used"]
+    assert "weather_tool" in body["tools_used"]
+    assert "budget_tool" in body["tools_used"]
+    assert body["rag_trace"]["hop_1"]
     assert isinstance(body["plan"], list)
     assert body["needs_clarification"] is False
 
 
 def test_chat_clarifies_when_city_missing(monkeypatch, tmp_path):
     install_test_long_term_memory(monkeypatch, tmp_path)
+    install_test_agent_services(monkeypatch, tmp_path)
 
     response = client.post("/chat", json={"user_id": "api-clarify-user", "message": "Plan me a trip"})
 
