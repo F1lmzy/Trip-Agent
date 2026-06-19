@@ -4,6 +4,8 @@ import httpx
 
 from app.tools.external_content import (
     _chunk_extract,
+    _retry_after_seconds,
+    clear_failed_cache,
     external_docs_to_vectors,
     fetch_city_docs,
 )
@@ -62,8 +64,9 @@ def test_fetch_city_docs_uses_wikivoyage_first():
         + "It has many temples and shrines. " * 10
     )
     client = _mock_client(wikivoyage_extract=extract, wikipedia_extract=None)
+    clear_failed_cache()
 
-    docs = fetch_city_docs("Kyoto", client=client)
+    docs = fetch_city_docs("Kyoto", client=client, sleep_fn=_noop_sleep)
 
     assert len(docs) >= 2
     assert all(doc.city == "Kyoto" for doc in docs)
@@ -74,8 +77,9 @@ def test_fetch_city_docs_uses_wikivoyage_first():
 def test_fetch_city_docs_falls_back_to_wikipedia_when_wikivoyage_empty():
     wikipedia_extract = "Kyoto is the capital of Kyoto Prefecture. " * 20
     client = _mock_client(wikivoyage_extract=None, wikipedia_extract=wikipedia_extract)
+    clear_failed_cache()
 
-    docs = fetch_city_docs("Kyoto", client=client)
+    docs = fetch_city_docs("Kyoto", client=client, sleep_fn=_noop_sleep)
 
     assert len(docs) >= 2
     assert all(doc.source == "wikipedia" for doc in docs)
@@ -83,8 +87,9 @@ def test_fetch_city_docs_falls_back_to_wikipedia_when_wikivoyage_empty():
 
 def test_fetch_city_docs_returns_empty_when_both_sources_fail():
     client = _mock_client(wikivoyage_extract=None, wikipedia_extract=None)
+    clear_failed_cache()
 
-    docs = fetch_city_docs("Nonexistent City", client=client)
+    docs = fetch_city_docs("Nonexistent City", client=client, sleep_fn=_noop_sleep)
 
     assert docs == []
 
@@ -94,7 +99,8 @@ def test_fetch_city_docs_returns_empty_on_http_error():
         return httpx.Response(500, json={"error": "server error"})
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
-    docs = fetch_city_docs("Kyoto", client=client)
+    clear_failed_cache()
+    docs = fetch_city_docs("Kyoto", client=client, sleep_fn=_noop_sleep)
 
     assert docs == []
 
@@ -151,3 +157,115 @@ def test_external_docs_to_vectors_returns_correct_shape():
     assert payload["ids"] == ["ext-wikipedia-kyoto-0", "ext-wikipedia-kyoto-1"]
     assert payload["metadatas"][0] == {"city": "Kyoto", "type": "city_overview", "source": "external_wikipedia"}
     assert len(payload["metadatas"]) == 2
+
+
+# --- Retry and rate-limit tests ---
+
+
+def _noop_sleep(_seconds: float) -> None:
+    """A sleep function that does nothing, for fast tests."""
+    pass
+
+
+def test_fetch_retries_on_429_then_succeeds():
+    """A 429 on the first attempt should trigger a retry that succeeds."""
+    call_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        if "wikivoyage" in str(request.url) and call_count == 1:
+            return httpx.Response(429, headers={"Retry-After": "0"}, json={})
+        return httpx.Response(
+            200,
+            json=_wikivoyage_response("Kyoto is a beautiful city with temples. " * 20),
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    clear_failed_cache()
+    docs = fetch_city_docs("Kyoto", client=client, sleep_fn=_noop_sleep)
+
+    assert len(docs) >= 2
+    assert call_count >= 2  # At least one retry
+
+
+def test_fetch_respects_retry_after_header():
+    """The Retry-After header value should be used as the wait time."""
+    response = httpx.Response(429, headers={"Retry-After": "5"})
+
+    wait = _retry_after_seconds(response, default=2.0)
+
+    assert wait == 5.0
+
+
+def test_fetch_falls_back_to_default_backoff_without_retry_after():
+    """Without a Retry-After header, the default backoff should be used."""
+    response = httpx.Response(429)
+
+    wait = _retry_after_seconds(response, default=3.0)
+
+    assert wait == 3.0
+
+
+def test_fetch_caches_failures_to_avoid_repeated_429s():
+    """After a city fails all retries, a second fetch should skip the API entirely."""
+    call_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        return httpx.Response(429, headers={"Retry-After": "0"}, json={})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    clear_failed_cache()
+
+    docs1 = fetch_city_docs("Stockholm", client=client, sleep_fn=_noop_sleep)
+    calls_after_first = call_count
+
+    docs2 = fetch_city_docs("Stockholm", client=client, sleep_fn=_noop_sleep)
+    calls_after_second = call_count
+
+    assert docs1 == []
+    assert docs2 == []
+    # The second fetch should not have made any new API calls (cached failure).
+    assert calls_after_second == calls_after_first
+
+
+def test_fetch_retries_on_500_then_succeeds():
+    """A 5xx on the first attempt should trigger a retry that succeeds."""
+    call_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return httpx.Response(503, json={"error": "service unavailable"})
+        return httpx.Response(
+            200,
+            json=_wikivoyage_response("Kyoto is a beautiful city with temples. " * 20),
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    clear_failed_cache()
+    docs = fetch_city_docs("Kyoto", client=client, sleep_fn=_noop_sleep)
+
+    assert len(docs) >= 2
+    assert call_count >= 2
+
+
+def test_fetch_gives_up_after_max_retries_on_persistent_429():
+    """Persistent 429s should exhaust retries and return empty without hanging."""
+    call_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        return httpx.Response(429, headers={"Retry-After": "0"}, json={})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    clear_failed_cache()
+    docs = fetch_city_docs("Oslo", client=client, sleep_fn=_noop_sleep)
+
+    assert docs == []
+    # Wikivoyage: 4 attempts (1 + 3 retries), Wikipedia: 4 attempts = 8 total.
+    assert call_count == 8

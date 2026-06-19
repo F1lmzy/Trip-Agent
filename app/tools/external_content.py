@@ -5,24 +5,44 @@ Wikipedia (general encyclopedic content) via their Action API. The returned
 plain-text extracts are chunked into paragraphs suitable for embedding into
 ChromaDB.
 
+Rate-limit handling:
+- Retries 429 responses with exponential backoff, respecting the Retry-After header.
+- Adds a small delay between the Wikivoyage and Wikipedia fallback to avoid bursts.
+- Caches failed fetches in-memory so a repeated request for the same city does
+  not hammer the API again within the same process lifetime.
+
 All network calls use httpx and accept an optional client for testability.
-A User-Agent header is set per the Wikimedia API etiquette policy.
+A descriptive User-Agent header is set per the Wikimedia API etiquette policy.
 """
 
 from __future__ import annotations
 
 import re
+import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 
 _WIKIVOYAGE_API = "https://en.wikivoyage.org/w/api.php"
 _WIKIPEDIA_API = "https://en.wikipedia.org/w/api.php"
-_USER_AGENT = "TripAgent/1.0 (educational project; contact@example.com)"
+_USER_AGENT = "TripAgent/1.0 (https://github.com/srirajkavin/Trip-Agent; educational project)"
 _MIN_EXTRACT_CHARS = 200
 _MAX_CHUNK_CHARS = 600
 _MIN_CHUNK_CHARS = 80
+
+# Retry configuration for 429 / 5xx responses.
+_MAX_RETRIES = 3
+_INITIAL_BACKOFF_SECONDS = 2.0
+_MAX_BACKOFF_SECONDS = 30.0
+# Delay between the Wikivoyage attempt and the Wikipedia fallback.
+_INTER_SOURCE_DELAY_SECONDS = 1.0
+
+# In-memory cache of cities that failed to fetch in this process.
+# Prevents repeated hammering of the API after a 429 or network failure.
+# Maps "city:source" -> failure timestamp.
+_failed_fetch_cache: dict[str, float] = {}
+_FAILED_CACHE_TTL_SECONDS = 300.0  # 5 minutes
 
 
 @dataclass
@@ -39,6 +59,7 @@ def fetch_city_docs(
     city: str,
     client: httpx.Client | None = None,
     timeout: float = 15.0,
+    sleep_fn: Callable[[float], None] | None = None,
 ) -> list[ExternalDoc]:
     """Fetch and chunk a city article from Wikivoyage, falling back to Wikipedia.
 
@@ -46,15 +67,18 @@ def fetch_city_docs(
         city: City name to fetch content for (e.g. "Kyoto").
         client: Optional httpx client for testability.
         timeout: Request timeout in seconds.
+        sleep_fn: Optional sleep function for testability (defaults to time.sleep).
 
     Returns:
         List of ExternalDoc chunks, or an empty list if both sources fail.
     """
     normalized = city.strip().replace("_", " ").title()
+    sleeper = sleep_fn or time.sleep
 
-    extract, source = _try_fetch(normalized, "wikivoyage", client, timeout)
+    extract, source = _try_fetch_with_retries(normalized, "wikivoyage", client, timeout, sleeper)
     if not extract or len(extract) < _MIN_EXTRACT_CHARS:
-        extract, source = _try_fetch(normalized, "wikipedia", client, timeout)
+        sleeper(_INTER_SOURCE_DELAY_SECONDS)
+        extract, source = _try_fetch_with_retries(normalized, "wikipedia", client, timeout, sleeper)
 
     if not extract or len(extract) < _MIN_EXTRACT_CHARS:
         return []
@@ -62,16 +86,21 @@ def fetch_city_docs(
     return _chunk_extract(extract, normalized, source)
 
 
-def _try_fetch(
+def _try_fetch_with_retries(
     city: str,
     source: str,
     client: httpx.Client | None,
     timeout: float,
+    sleep_fn: Callable[[float], None],
 ) -> tuple[str, str]:
-    """Attempt to fetch a plain-text extract from a given source.
+    """Attempt to fetch from a source, retrying on 429/5xx with backoff.
 
     Returns (extract_text, source_name) or ("", source) on failure.
     """
+    cache_key = f"{city.lower()}:{source}"
+    if _is_recently_failed(cache_key):
+        return "", source
+
     api_url = _WIKIVOYAGE_API if source == "wikivoyage" else _WIKIPEDIA_API
     params = {
         "action": "query",
@@ -83,25 +112,84 @@ def _try_fetch(
     }
     headers = {"User-Agent": _USER_AGENT}
 
-    try:
-        if client is None:
-            with httpx.Client(timeout=timeout) as owned:
-                response = owned.get(api_url, params=params, headers=headers)
-        else:
-            response = client.get(api_url, params=params, headers=headers)
+    backoff = _INITIAL_BACKOFF_SECONDS
+    for attempt in range(_MAX_RETRIES + 1):
+        try:
+            if client is None:
+                with httpx.Client(timeout=timeout) as owned:
+                    response = owned.get(api_url, params=params, headers=headers)
+            else:
+                response = client.get(api_url, params=params, headers=headers)
 
-        response.raise_for_status()
-        data = response.json()
-    except (httpx.HTTPError, ValueError, KeyError, TypeError):
+            if response.status_code == 429:
+                if attempt < _MAX_RETRIES:
+                    wait = _retry_after_seconds(response, backoff)
+                    sleep_fn(wait)
+                    backoff = min(backoff * 2, _MAX_BACKOFF_SECONDS)
+                    continue
+                _mark_failed(cache_key)
+                return "", source
+
+            if response.status_code >= 500:
+                if attempt < _MAX_RETRIES:
+                    sleep_fn(backoff)
+                    backoff = min(backoff * 2, _MAX_BACKOFF_SECONDS)
+                    continue
+                _mark_failed(cache_key)
+                return "", source
+
+            response.raise_for_status()
+            data = response.json()
+        except (httpx.HTTPError, ValueError, KeyError, TypeError):
+            if attempt < _MAX_RETRIES:
+                sleep_fn(backoff)
+                backoff = min(backoff * 2, _MAX_BACKOFF_SECONDS)
+                continue
+            _mark_failed(cache_key)
+            return "", source
+
+        pages = data.get("query", {}).get("pages", {})
+        for _page_id, page in pages.items():
+            extract = page.get("extract", "")
+            if extract and len(extract) >= _MIN_EXTRACT_CHARS:
+                return str(extract), source
+
         return "", source
 
-    pages = data.get("query", {}).get("pages", {})
-    for _page_id, page in pages.items():
-        extract = page.get("extract", "")
-        if extract and len(extract) >= _MIN_EXTRACT_CHARS:
-            return str(extract), source
-
+    _mark_failed(cache_key)
     return "", source
+
+
+def _retry_after_seconds(response: httpx.Response, default: float) -> float:
+    """Extract the Retry-After header value, falling back to the default backoff."""
+    retry_after = response.headers.get("Retry-After")
+    if retry_after:
+        try:
+            return min(float(retry_after), _MAX_BACKOFF_SECONDS)
+        except ValueError:
+            pass
+    return default
+
+
+def _is_recently_failed(cache_key: str) -> bool:
+    """Check if a city:source was recently marked as failed and is still in cooldown."""
+    failed_at = _failed_fetch_cache.get(cache_key)
+    if failed_at is None:
+        return False
+    if time.time() - failed_at > _FAILED_CACHE_TTL_SECONDS:
+        _failed_fetch_cache.pop(cache_key, None)
+        return False
+    return True
+
+
+def _mark_failed(cache_key: str) -> None:
+    """Record that a city:source fetch failed so we skip it for a while."""
+    _failed_fetch_cache[cache_key] = time.time()
+
+
+def clear_failed_cache() -> None:
+    """Clear the in-memory failed-fetch cache. Primarily for tests."""
+    _failed_fetch_cache.clear()
 
 
 def _chunk_extract(extract: str, city: str, source: str) -> list[ExternalDoc]:

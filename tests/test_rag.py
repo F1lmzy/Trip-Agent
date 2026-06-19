@@ -60,9 +60,20 @@ def test_rag_supports_mumbai_food_and_culture(tmp_path):
 
 
 def test_rag_unknown_city_returns_empty_result(tmp_path):
+    import httpx
+
+    from app.tools.external_content import clear_failed_cache
+
+    clear_failed_cache()
     tool = make_tool(tmp_path)
 
-    result = tool.run(city="Atlantis", interests=["museums"])
+    # Use a mock client that returns empty pages so no external docs are ingested.
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"query": {"pages": {"1": {"title": "Atlantis"}}}})
+
+    mock_client = httpx.Client(transport=httpx.MockTransport(handler))
+
+    result = tool.run(city="Atlantis", interests=["museums"], http_client=mock_client)
 
     assert result["status"] == "no_results"
     assert result["results"] == []
@@ -75,6 +86,9 @@ def test_rag_auto_ingests_external_docs_for_unknown_city(tmp_path):
     and retries, producing real hop_1 results from the ingested content."""
     import httpx
 
+    from app.tools.external_content import clear_failed_cache
+
+    clear_failed_cache()
     vector_store = VectorStore(path=str(tmp_path), embedder=FakeEmbedder())
     tool = AttractionRagTool(vector_store=vector_store)
     tool.seed()
@@ -113,6 +127,9 @@ def test_rag_auto_ingest_caches_so_second_call_skips_fetch(tmp_path):
     city should find them in ChromaDB without fetching again."""
     import httpx
 
+    from app.tools.external_content import clear_failed_cache
+
+    clear_failed_cache()
     vector_store = VectorStore(path=str(tmp_path), embedder=FakeEmbedder())
     tool = AttractionRagTool(vector_store=vector_store)
     tool.seed()
