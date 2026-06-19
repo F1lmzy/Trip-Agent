@@ -85,7 +85,11 @@ def _execute_tools(parsed: ParsedRequest, plan: PlanningResult, services: AgentS
             rag_tool.seed()
             services.rag_seeded = True
         services.attraction_rag_tool = rag_tool
-        tool_outputs["attraction_rag_tool"] = rag_tool.run(city=parsed.city, interests=parsed.interests)
+        tool_outputs["attraction_rag_tool"] = rag_tool.run(
+            city=parsed.city,
+            interests=parsed.interests,
+            http_client=services.weather_client,
+        )
 
     if "weather_tool" in selected_tools:
         tool_outputs["weather_tool"] = run_weather_tool(

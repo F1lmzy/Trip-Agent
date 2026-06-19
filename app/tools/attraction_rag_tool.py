@@ -2,9 +2,11 @@ import json
 from pathlib import Path
 from typing import Any
 
+import httpx
 from pydantic import BaseModel, Field
 
 from app.memory.vector_store import VectorSearchResult, VectorStore
+from app.tools.external_content import external_docs_to_vectors, fetch_city_docs
 
 
 CITY_DOCS_COLLECTION = "travel_city_docs"
@@ -50,7 +52,13 @@ class AttractionRagTool:
         self._seed_city_docs()
         self._seed_attractions()
 
-    def run(self, city: str, interests: list[str] | None = None, limit: int = 5) -> dict[str, Any]:
+    def run(
+        self,
+        city: str,
+        interests: list[str] | None = None,
+        limit: int = 5,
+        http_client: httpx.Client | None = None,
+    ) -> dict[str, Any]:
         normalized_city = _normalize_city(city)
         interest_terms = " ".join(interests or ["highlights"])
 
@@ -61,6 +69,16 @@ class AttractionRagTool:
             n_results=2,
             where={"city": normalized_city},
         )
+
+        if not hop_1_results:
+            ingested = self._ingest_external_city_docs(normalized_city, http_client)
+            if ingested:
+                hop_1_results = self.vector_store.query(
+                    CITY_DOCS_COLLECTION,
+                    query_text=hop_1_query,
+                    n_results=2,
+                    where={"city": normalized_city},
+                )
 
         if not hop_1_results:
             return AttractionRagResult(status="no_results", city=normalized_city).model_dump()
@@ -90,6 +108,42 @@ class AttractionRagTool:
                 "hop_2": _summarize_results(hop_2_results),
             },
         ).model_dump()
+
+    def _ingest_external_city_docs(
+        self,
+        city: str,
+        http_client: httpx.Client | None,
+    ) -> bool:
+        """Fetch external city docs and embed them into city_docs and attractions.
+
+        External content serves as both city overview (hop_1) and attraction
+        context (hop_2) since there is no curated attraction data for unknown
+        cities. Returns True if any docs were ingested, False otherwise.
+        """
+        docs = fetch_city_docs(city, client=http_client)
+        if not docs:
+            return False
+        payload = external_docs_to_vectors(docs)
+        self.vector_store.add_documents(
+            CITY_DOCS_COLLECTION,
+            documents=payload["documents"],
+            metadatas=payload["metadatas"],
+            ids=payload["ids"],
+        )
+        # Also add to attractions collection so hop_2 can retrieve content for
+        # cities without curated attraction data.
+        attraction_metadatas = [
+            {**meta, "type": "attraction", "name": doc.text[:60]}
+            for meta, doc in zip(payload["metadatas"], docs)
+        ]
+        attraction_ids = [f"{doc_id}-attr" for doc_id in payload["ids"]]
+        self.vector_store.add_documents(
+            ATTRACTIONS_COLLECTION,
+            documents=payload["documents"],
+            metadatas=attraction_metadatas,
+            ids=attraction_ids,
+        )
+        return True
 
     def _seed_city_docs(self) -> None:
         docs = load_city_documents()

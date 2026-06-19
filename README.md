@@ -9,7 +9,7 @@ A FastAPI travel-planning agent that creates personalized 2-day itineraries with
 - All tools exposed as an MCP (Model Context Protocol) server at `/mcp`
 - Custom parser and planner with visible reasoning steps
 - Tool use:
-  - `attraction_rag_tool` for multi-hop city and attraction retrieval
+  - `attraction_rag_tool` for multi-hop city and attraction retrieval with automatic external content ingestion
   - `weather_tool` using OpenWeatherMap
   - `budget_tool` for low/medium/luxury guidance
   - `web_search_tool` using LangChain's DuckDuckGo search integration for current or recent context
@@ -37,9 +37,28 @@ FastAPI app (`app/main.py`)
   │   ├── Short-term memory
   │   ├── Long-term ChromaDB memory
   │   └── Tools (`app/tools/*`)
-  │       └── Registry (`app/tools/registry.py`) — tool metadata
+  │       ├── Registry (`app/tools/registry.py`) — tool metadata
+  │       └── External content (`app/tools/external_content.py`) — Wikivoyage/Wikipedia ingestion
   └── Seed data (`app/data/*`)
 ```
+
+## Multi-hop RAG with external content ingestion
+
+The `attraction_rag_tool` performs two-hop retrieval over ChromaDB:
+
+1. **Hop 1**: City-overview retrieval for broad destination context
+2. **Hop 2**: Interest-specific retrieval using hop-1 context as expanded query
+
+For the 5 curated cities (Tokyo, Paris, Singapore, New York, Mumbai), retrieval uses hand-authored city docs and attraction data in `app/data/`.
+
+For any other city (e.g. Kyoto, London, Rome), the tool automatically:
+
+1. Fetches the city's article from **Wikivoyage** (travel-focused), falling back to **Wikipedia** if unavailable
+2. Chunks the plain-text extract into paragraphs
+3. Embeds the chunks into ChromaDB (tagged with `source: external_wikivoyage` or `source: external_wikipedia`)
+4. Retries the multi-hop RAG over the freshly-ingested content
+
+This happens transparently at query time — no pre-seeding required. Once a city is ingested, subsequent requests use the cached ChromaDB content without re-fetching.
 
 ## Requirements
 
@@ -294,7 +313,7 @@ app/
   data/        curated city and hotel/attraction data
   memory/      short-term memory, ChromaDB vector store, long-term memory
   static/      minimal HTML frontend
-  tools/       RAG, weather, budget, hotel, flight, web search tools + registry
+  tools/       RAG, weather, budget, hotel, flight, web search, external content, registry
   mcp_server.py  MCP server exposing all tools at /mcp
 docs/          spec and implementation plan
 tests/         unit and API tests

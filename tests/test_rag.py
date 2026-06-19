@@ -68,3 +68,71 @@ def test_rag_unknown_city_returns_empty_result(tmp_path):
     assert result["results"] == []
     assert result["rag_trace"]["hop_1"] == []
     assert result["rag_trace"]["hop_2"] == []
+
+
+def test_rag_auto_ingests_external_docs_for_unknown_city(tmp_path):
+    """When hop_1 is empty for an unknown city, the tool fetches external docs
+    and retries, producing real hop_1 results from the ingested content."""
+    import httpx
+
+    vector_store = VectorStore(path=str(tmp_path), embedder=FakeEmbedder())
+    tool = AttractionRagTool(vector_store=vector_store)
+    tool.seed()
+
+    wikivoyage_extract = (
+        "Kyoto is a beautiful city with many temples and shrines. "
+        "Fushimi Inari is famous for its torii gates. "
+        "Arashiyama has a bamboo grove. "
+        "Nishiki Market is great for food. "
+        "Gion is the historic geisha district."
+    ) * 5
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "query": {
+                    "pages": {
+                        "1": {"pageid": 1, "title": "Kyoto", "extract": wikivoyage_extract}
+                    }
+                }
+            },
+        )
+
+    mock_client = httpx.Client(transport=httpx.MockTransport(handler))
+
+    result = tool.run(city="Kyoto", interests=["food", "culture"], http_client=mock_client)
+
+    assert result["status"] == "ok"
+    assert result["rag_trace"]["hop_1"]
+    assert result["rag_trace"]["hop_1"][0]["metadata"]["source"] == "external_wikivoyage"
+
+
+def test_rag_auto_ingest_caches_so_second_call_skips_fetch(tmp_path):
+    """After the first call ingests external docs, a second call for the same
+    city should find them in ChromaDB without fetching again."""
+    import httpx
+
+    vector_store = VectorStore(path=str(tmp_path), embedder=FakeEmbedder())
+    tool = AttractionRagTool(vector_store=vector_store)
+    tool.seed()
+
+    fetch_count = 0
+    wikivoyage_extract = "Kyoto has temples and food markets. " * 20
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal fetch_count
+        fetch_count += 1
+        return httpx.Response(
+            200,
+            json={"query": {"pages": {"1": {"title": "Kyoto", "extract": wikivoyage_extract}}}},
+        )
+
+    mock_client = httpx.Client(transport=httpx.MockTransport(handler))
+
+    tool.run(city="Kyoto", interests=["food"], http_client=mock_client)
+    first_fetch_count = fetch_count
+
+    tool.run(city="Kyoto", interests=["food"], http_client=mock_client)
+
+    assert fetch_count == first_fetch_count
