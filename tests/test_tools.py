@@ -31,6 +31,14 @@ def test_budget_tool_unknown_value_falls_back_to_medium():
     assert result["assumed"] is True
 
 
+def test_budget_tool_small_budget_normalized_to_low():
+    assert run_budget_tool("small budget")["budget_level"] == "low"
+    assert run_budget_tool("tight budget")["budget_level"] == "low"
+    assert run_budget_tool("shoestring")["budget_level"] == "low"
+    assert run_budget_tool("on a budget")["budget_level"] == "low"
+    assert run_budget_tool("limited budget")["budget_level"] == "low"
+
+
 def test_hotel_seed_data_includes_demo_city_budget_levels():
     hotels = load_hotels()
     pairs = {(hotel["city"], hotel["budget_level"]) for hotel in hotels}

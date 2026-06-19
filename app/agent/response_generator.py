@@ -123,7 +123,16 @@ def _itinerary_from_llm_content(parsed: ParsedRequest, content: str, tool_output
     }
 
     fallback = _fallback_itinerary(parsed, tool_outputs)
+    table_rows = _parse_markdown_table(content)
     for day in range(1, duration_days + 1):
+        table_slots = _table_slots_for_day(table_rows, day)
+        if table_slots:
+            itinerary[f"day_{day}"] = {
+                slot: table_slots.get(slot) or fallback[f"day_{day}"][slot]
+                for slot in ("morning", "afternoon", "evening")
+            }
+            continue
+
         pattern = rf"(?:\*\*)?Day\s+{day}(?:\*\*)?(.+?)(?=(?:\*\*)?Day\s+{day + 1}(?:\*\*)?|$)"
         match = re.search(pattern, content, flags=re.IGNORECASE | re.DOTALL)
         if not match:
@@ -138,6 +147,70 @@ def _itinerary_from_llm_content(parsed: ParsedRequest, content: str, tool_output
         }
 
     return itinerary
+
+
+def _parse_markdown_table(content: str) -> list[dict[str, str]]:
+    """Parse a markdown table into a list of row dicts keyed by header.
+
+    Returns an empty list when no table is present. Handles pipe-delimited
+    rows with a separator row (---). Column headers are matched to
+    morning/afternoon/evening case-insensitively.
+    """
+    import re
+
+    lines = content.splitlines()
+    table_lines = [line.strip() for line in lines if line.strip().startswith("|")]
+    if len(table_lines) < 2:
+        return []
+
+    header = _split_table_row(table_lines[0])
+    if len(table_lines) > 1 and set(re.sub(r"[^:-]", "", table_lines[1])) <= {"-", ":"}:
+        data_lines = table_lines[2:]
+    else:
+        data_lines = table_lines[1:]
+
+    rows: list[dict[str, str]] = []
+    for line in data_lines:
+        cells = _split_table_row(line)
+        if not cells:
+            continue
+        row: dict[str, str] = {}
+        for index, cell in enumerate(cells):
+            if index < len(header):
+                row[header[index].lower()] = cell
+        rows.append(row)
+    return rows
+
+
+def _split_table_row(line: str) -> list[str]:
+    """Split a markdown table row into trimmed cell values."""
+    stripped = line.strip().strip("|")
+    return [cell.strip() for cell in stripped.split("|")]
+
+
+def _table_slots_for_day(table_rows: list[dict[str, str]], day: int) -> dict[str, str] | None:
+    """Extract morning/afternoon/evening slots for a given day from table rows.
+
+    Matches a row whose first column mentions the day number. Returns None
+    when no matching row is found.
+    """
+    import re
+
+    slot_keys = {"morning", "afternoon", "evening"}
+    for row in table_rows:
+        first_cell = next(iter(row.values()), "")
+        if re.search(rf"\bday\s*{day}\b", first_cell, flags=re.IGNORECASE):
+            slots: dict[str, str] = {}
+            for key, value in row.items():
+                normalized = key.lower()
+                for slot in slot_keys:
+                    if slot in normalized and value:
+                        cleaned = " ".join(value.replace("**", "").split()).strip(" -.;|")
+                        if cleaned:
+                            slots[slot] = cleaned
+            if slots:
+                return slots
+    return None
 
 
 def _extract_time_slot(section: str, slot: str) -> str | None:

@@ -43,7 +43,22 @@ def _normalize_budget(budget: str | None) -> str:
         return "medium"
 
     normalized = budget.lower().strip()
-    if normalized in {"cheap", "budget", "low", "affordable", "low-cost", "budget-friendly"}:
+    if normalized in {
+        "cheap",
+        "budget",
+        "low",
+        "affordable",
+        "low-cost",
+        "budget-friendly",
+        "small budget",
+        "small-budget",
+        "tight budget",
+        "tight-budget",
+        "shoestring",
+        "on a budget",
+        "budget trip",
+        "limited budget",
+    }:
         return "low"
     if normalized in {"moderate", "medium", "mid-range", "midrange"}:
         return "medium"

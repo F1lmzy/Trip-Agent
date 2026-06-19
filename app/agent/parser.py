@@ -35,7 +35,22 @@ INTEREST_KEYWORDS = {
 }
 
 BUDGET_KEYWORDS = {
-    "low": ["cheap", "low budget", "low-budget", "affordable", "low-cost", "budget-friendly"],
+    "low": [
+        "cheap",
+        "low budget",
+        "low-budget",
+        "affordable",
+        "low-cost",
+        "budget-friendly",
+        "small budget",
+        "small-budget",
+        "tight budget",
+        "tight-budget",
+        "shoestring",
+        "on a budget",
+        "budget trip",
+        "limited budget",
+    ],
     "medium": ["moderate", "medium", "mid-range", "midrange"],
     "luxury": ["luxury", "premium", "high-end", "expensive"],
 }

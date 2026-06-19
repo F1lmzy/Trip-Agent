@@ -382,6 +382,69 @@ def test_response_generator_structures_itinerary_from_openrouter_text():
     assert response.itinerary["day_2"]["afternoon"] == "Visit Temple of Heaven"
 
 
+def test_response_generator_parses_markdown_table_itinerary():
+    parsed = parse_user_request("Plan a 2-day trip to Kyoto with food.")
+    plan = create_trip_plan(parsed, rag_context_is_weak=True)
+
+    table_content = (
+        "| Day | Morning | Afternoon | Evening |\n"
+        "|---|---|---|---|\n"
+        "| **Day 1: Shrines** | Visit **Fushimi Inari** early. | Head to **Nishiki Market** for food. | Stroll **Pontocho Alley**. |\n"
+        "| **Day 2: Bamboo** | Go to **Arashiyama** for the bamboo grove. | Continue with temple sightseeing. | Budget dinner near Kyoto Station. |"
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"choices": [{"message": {"content": table_content}}]})
+
+    response = generate_itinerary_response(
+        parsed=parsed,
+        plan=plan,
+        tool_outputs={"budget_tool": {"budget_level": "low"}},
+        memory_used=[],
+        api_key="test-key",
+        model="test-model",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    assert response.itinerary["status"] == "generated_with_openrouter"
+    assert response.itinerary["day_1"]["morning"] == "Visit Fushimi Inari early"
+    assert response.itinerary["day_1"]["afternoon"] == "Head to Nishiki Market for food"
+    assert response.itinerary["day_1"]["evening"] == "Stroll Pontocho Alley"
+    assert response.itinerary["day_2"]["morning"] == "Go to Arashiyama for the bamboo grove"
+    assert response.itinerary["day_2"]["evening"] == "Budget dinner near Kyoto Station"
+
+
+def test_response_generator_table_falls_back_to_label_parser_when_no_table():
+    parsed = parse_user_request("Plan a 2-day trip to Beijing with food.")
+    plan = create_trip_plan(parsed, rag_context_is_weak=True)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": "**Day 1**\n- Morning: Visit Tiananmen Square. Afternoon: Explore Forbidden City. Evening: Eat at Wangfujing.\n\n**Day 2**\n- Morning: Walk the Summer Palace. Afternoon: Visit Temple of Heaven. Evening: Try hutong snacks."
+                        }
+                    }
+                ]
+            },
+        )
+
+    response = generate_itinerary_response(
+        parsed=parsed,
+        plan=plan,
+        tool_outputs={"budget_tool": {"budget_level": "medium"}},
+        memory_used=[],
+        api_key="test-key",
+        model="test-model",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    assert response.itinerary["day_1"]["morning"] == "Visit Tiananmen Square"
+
+
 def test_response_generator_fallback_matches_requested_duration_and_uses_specific_search_context():
     parsed = parse_user_request("Plan a 4-day trip to Hokkaido with food and nature.")
     plan = create_trip_plan(parsed, rag_context_is_weak=True)

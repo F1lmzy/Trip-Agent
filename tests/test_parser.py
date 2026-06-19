@@ -26,6 +26,24 @@ def test_parse_singapore_budget_synonyms():
     assert "vegetarian" in parsed.dietary_needs
 
 
+def test_parse_small_budget_recognized_as_low():
+    parsed = parse_user_request("Plan a 2-day trip to Tokyo on a small budget.")
+
+    assert parsed.budget == "low"
+
+
+def test_parse_tight_budget_recognized_as_low():
+    parsed = parse_user_request("Plan a 2-day trip to Tokyo with a tight budget.")
+
+    assert parsed.budget == "low"
+
+
+def test_parse_shoestring_budget_recognized_as_low():
+    parsed = parse_user_request("Plan a shoestring 2-day trip to Tokyo.")
+
+    assert parsed.budget == "low"
+
+
 def test_missing_city_has_no_city():
     parsed = parse_user_request("Plan me a trip")
 
