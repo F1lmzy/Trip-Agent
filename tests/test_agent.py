@@ -445,6 +445,87 @@ def test_response_generator_table_falls_back_to_label_parser_when_no_table():
     assert response.itinerary["day_1"]["morning"] == "Visit Tiananmen Square"
 
 
+def test_response_generator_parses_header_without_colon_format():
+    """The LLM often uses **Morning** as a standalone header with bullet content
+    on the following lines, without a colon. This should be parsed correctly
+    instead of falling back to the template text."""
+    parsed = parse_user_request("Plan a 2-day trip to Stockholm with food.")
+    plan = create_trip_plan(parsed, rag_context_is_weak=True)
+
+    content = (
+        "**Day 1**  \n"
+        "**Morning**  \n"
+        "- **Free Exploration**: Walk around Gamla Stan and Södermalm.  \n"
+        "- **Food**: Grab affordable pastries from a local bakery.  \n\n"
+        "**Afternoon**  \n"
+        "- **Low-Cost Attraction**: Explore the Stockholm Archipelago.  \n"
+        "- **Food**: Lunch at a market stall.  \n\n"
+        "**Evening**  \n"
+        "- **Free Activity**: Stroll along the waterfront at sunset.  \n\n"
+        "**Day 2**  \n"
+        "**Morning**  \n"
+        "- **Free Activity**: Visit the Vasa Museum exterior.  \n"
+        "- **Food**: Breakfast at a budget café.  \n\n"
+        "**Afternoon**  \n"
+        "- **Budget Attraction**: Free transit to Norrmalm for shopping.  \n\n"
+        "**Evening**  \n"
+        "- **Free Activity**: Relax in a park or attend a free event."
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
+
+    response = generate_itinerary_response(
+        parsed=parsed,
+        plan=plan,
+        tool_outputs={"budget_tool": {"budget_level": "low"}},
+        memory_used=[],
+        api_key="test-key",
+        model="test-model",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    assert response.itinerary["status"] == "generated_with_openrouter"
+    assert "Gamla Stan" in response.itinerary["day_1"]["morning"]
+    assert "Archipelago" in response.itinerary["day_1"]["afternoon"]
+    assert "waterfront" in response.itinerary["day_1"]["evening"]
+    assert "Vasa Museum" in response.itinerary["day_2"]["morning"]
+    assert "Norrmalm" in response.itinerary["day_2"]["afternoon"]
+    assert "park" in response.itinerary["day_2"]["evening"].lower()
+
+
+def test_attraction_names_skips_external_text_chunks():
+    """Externally-ingested RAG results have raw text chunks as 'name' — those
+    should be skipped so the fallback itinerary doesn't use sentence fragments
+    as attraction names."""
+    from app.agent.response_generator import _attraction_names
+
+    tool_outputs = {
+        "attraction_rag_tool": {
+            "results": [
+                {
+                    "name": "Akihabara",
+                    "description": "Akihabara in Tokyo. Anime and electronics district.",
+                },
+                {
+                    "name": "Stockholm is Sweden's capital and largest city, with nearly",
+                    "description": "Stockholm is Sweden's capital and largest city, with nearly 1 million residents.",
+                },
+                {
+                    "name": "Tsukiji Outer Market",
+                    "description": "Tsukiji Outer Market in Tokyo. Food-focused market area.",
+                },
+            ]
+        }
+    }
+
+    names = _attraction_names(tool_outputs)
+
+    assert "Akihabara" in names
+    assert "Tsukiji Outer Market" in names
+    assert "Stockholm is Sweden's capital and largest city, with nearly" not in names
+
+
 def test_response_generator_fallback_matches_requested_duration_and_uses_specific_search_context():
     parsed = parse_user_request("Plan a 4-day trip to Hokkaido with food and nature.")
     plan = create_trip_plan(parsed, rag_context_is_weak=True)

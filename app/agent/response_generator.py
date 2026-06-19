@@ -216,14 +216,30 @@ def _table_slots_for_day(table_rows: list[dict[str, str]], day: int) -> dict[str
 def _extract_time_slot(section: str, slot: str) -> str | None:
     import re
 
-    label = rf"\*{{0,2}}\s*{slot}\s*\*{{0,2}}\s*:"
-    next_label = r"\*{0,2}\s*(?:morning|afternoon|evening|budget|memory|note)\s*\*{0,2}\s*:"
-    pattern = rf"{label}\s*(.+?)(?=(?:{next_label})|\n\s*-\s*\*{{0,2}}(?:Morning|Afternoon|Evening|Budget|Memory|Note)\*{{0,2}}\s*:|\n\s*\*|$)"
-    match = re.search(pattern, section, flags=re.IGNORECASE | re.DOTALL)
-    if not match:
-        return None
-    value = " ".join(match.group(1).replace("**", "").split()).strip(" -.;")
-    return value or None
+    # Format 1: label with colon — "**Morning**: content" or "**Morning**: content until next label"
+    label_colon = rf"\*{{0,2}}\s*{slot}\s*\*{{0,2}}\s*:"
+    next_label_colon = r"\*{0,2}\s*(?:morning|afternoon|evening|budget|memory|note)\s*\*{0,2}\s*:"
+    pattern_colon = rf"{label_colon}\s*(.+?)(?=(?:{next_label_colon})|\n\s*-\s*\*{{0,2}}(?:Morning|Afternoon|Evening|Budget|Memory|Note)\*{{0,2}}\s*:|\n\s*\*|$)"
+    match = re.search(pattern_colon, section, flags=re.IGNORECASE | re.DOTALL)
+    if match:
+        value = " ".join(match.group(1).replace("**", "").split()).strip(" -.;")
+        return value or None
+
+    # Format 2: label as standalone header without colon — "**Morning**\n- content\n\n**Afternoon**"
+    # The label appears on its own line, content follows on subsequent lines
+    # until the next time-slot label or end of section.
+    label_header = rf"\*{{0,2}}\s*{slot}\s*\*{{0,2}}\s*\n"
+    next_label_header = r"\*{0,2}\s*(?:morning|afternoon|evening|budget|memory|note|day)\s*\*{0,2}\s*(?:\n|:|$)"
+    pattern_header = rf"{label_header}(.+?)(?=(?:{next_label_header})|$)"
+    match = re.search(pattern_header, section, flags=re.IGNORECASE | re.DOTALL)
+    if match:
+        raw = match.group(1).replace("**", "")
+        # Collapse bullet points and newlines into a single readable line.
+        raw = re.sub(r"^\s*[-•]\s*", "", raw, flags=re.MULTILINE)
+        value = " ".join(raw.split()).strip(" -.;|")
+        return value or None
+
+    return None
 
 
 def _fallback_itinerary(parsed: ParsedRequest, tool_outputs: dict[str, Any]) -> dict[str, Any]:
@@ -272,8 +288,25 @@ def _fallback_message(parsed: ParsedRequest, status: str) -> str:
 
 
 def _attraction_names(tool_outputs: dict[str, Any]) -> list[str]:
+    """Extract clean attraction names from RAG results.
+
+    Skips externally-ingested results whose "name" is a raw text chunk
+    (e.g. "Stockholm is Sweden's capital...") rather than a real attraction
+    name. Those results are still useful for the LLM prompt context, but not
+    for the fallback itinerary template.
+    """
     results = tool_outputs.get("attraction_rag_tool", {}).get("results", [])
-    return [str(item.get("name")) for item in results if item.get("name")]
+    names: list[str] = []
+    for item in results:
+        name = item.get("name")
+        if not name:
+            continue
+        # External ingestion sets name to a truncated text chunk — skip those.
+        description = item.get("description", "")
+        if name in description[: len(name)] and len(name) > 40:
+            continue
+        names.append(str(name))
+    return names
 
 
 def _web_search_place_suggestions(tool_outputs: dict[str, Any]) -> list[str]:
