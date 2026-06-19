@@ -30,11 +30,11 @@ class VectorStore:
     def __init__(
         self,
         path: str | None = None,
-        embedding_model_name: str = "all-MiniLM-L6-v2",
+        embedding_model_name: str | None = None,
         embedder: Embedder | None = None,
     ) -> None:
         self.path = path or get_settings().chroma_path
-        self.embedding_model_name = embedding_model_name
+        self.embedding_model_name = embedding_model_name or "openrouter"
         self._embedder = embedder
         self._client = chromadb.PersistentClient(
             path=self.path,
@@ -99,9 +99,13 @@ class VectorStore:
 
     def _get_embedder(self) -> Embedder:
         if self._embedder is None:
-            from sentence_transformers import SentenceTransformer
+            from app.memory.openrouter_embedder import OpenRouterEmbedder
 
-            self._embedder = SentenceTransformer(self.embedding_model_name)
+            self._embedder = OpenRouterEmbedder(
+                model=self.embedding_model_name
+                if self.embedding_model_name != "openrouter"
+                else None
+            )
         return self._embedder
 
     @staticmethod

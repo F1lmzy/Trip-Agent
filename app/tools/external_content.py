@@ -25,7 +25,6 @@ from typing import Any, Callable
 import httpx
 
 _WIKIVOYAGE_API = "https://en.wikivoyage.org/w/api.php"
-_WIKIPEDIA_API = "https://en.wikipedia.org/w/api.php"
 _USER_AGENT = "TripAgent/1.0 (https://github.com/srirajkavin/Trip-Agent; educational project)"
 _MIN_EXTRACT_CHARS = 200
 _MAX_CHUNK_CHARS = 600
@@ -35,8 +34,6 @@ _MIN_CHUNK_CHARS = 80
 _MAX_RETRIES = 3
 _INITIAL_BACKOFF_SECONDS = 2.0
 _MAX_BACKOFF_SECONDS = 30.0
-# Delay between the Wikivoyage attempt and the Wikipedia fallback.
-_INTER_SOURCE_DELAY_SECONDS = 1.0
 
 # In-memory cache of cities that failed to fetch in this process.
 # Prevents repeated hammering of the API after a 429 or network failure.
@@ -271,7 +268,14 @@ def fetch_city_docs(
     timeout: float = 15.0,
     sleep_fn: Callable[[float], None] | None = None,
 ) -> list[ExternalDoc]:
-    """Fetch and chunk a city article from Wikivoyage, falling back to Wikipedia.
+    """Fetch and chunk a city article from Wikivoyage.
+
+    Wikivoyage is the single external source for city overviews. A previous
+    Wikipedia fallback was removed because disambiguation pages (e.g.
+    "Newcastle usually refers to:") were being ingested as city context and
+    served as attractions. If Wikivoyage has no article for the city (or the
+    exact title does not match), an empty list is returned so the caller can
+    return ``no_results`` rather than serving junk.
 
     Args:
         city: City name to fetch content for (e.g. "Kyoto").
@@ -280,15 +284,13 @@ def fetch_city_docs(
         sleep_fn: Optional sleep function for testability (defaults to time.sleep).
 
     Returns:
-        List of ExternalDoc chunks, or an empty list if both sources fail.
+        List of ExternalDoc chunks, or an empty list if Wikivoyage has no
+        usable article for the city.
     """
     normalized = city.strip().replace("_", " ").title()
     sleeper = sleep_fn or time.sleep
 
     extract, source = _try_fetch_with_retries(normalized, "wikivoyage", client, timeout, sleeper)
-    if not extract or len(extract) < _MIN_EXTRACT_CHARS:
-        sleeper(_INTER_SOURCE_DELAY_SECONDS)
-        extract, source = _try_fetch_with_retries(normalized, "wikipedia", client, timeout, sleeper)
 
     if not extract or len(extract) < _MIN_EXTRACT_CHARS:
         return []
@@ -311,7 +313,7 @@ def _try_fetch_with_retries(
     if _is_recently_failed(cache_key):
         return "", source
 
-    api_url = _WIKIVOYAGE_API if source == "wikivoyage" else _WIKIPEDIA_API
+    api_url = _WIKIVOYAGE_API
     params = {
         "action": "query",
         "format": "json",

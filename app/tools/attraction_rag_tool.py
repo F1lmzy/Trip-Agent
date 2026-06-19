@@ -15,6 +15,7 @@ from app.tools.external_content import (
 
 CITY_DOCS_COLLECTION = "travel_city_docs"
 ATTRACTIONS_COLLECTION = "travel_attractions"
+_VALID_EXTERNAL_SOURCE = "external_wikivoyage"
 _DATA_DIR = Path(__file__).parents[1] / "data"
 _ATTRACTIONS_PATH = _DATA_DIR / "attractions.json"
 _CITY_DOCS_DIR = _DATA_DIR / "city_docs"
@@ -73,6 +74,19 @@ class AttractionRagTool:
             n_results=2,
             where={"city": normalized_city},
         )
+
+        # Purge legacy external data (e.g. external_wikipedia from before the
+        # Wikivoyage migration) so stale disambiguation junk is never served as
+        # city context or attractions. Re-query hop_1; if still empty, the
+        # normal external-ingest path fetches fresh data from Wikivoyage.
+        if hop_1_results and _hop_1_is_legacy_external(hop_1_results):
+            self._purge_external_city_data(normalized_city)
+            hop_1_results = self.vector_store.query(
+                CITY_DOCS_COLLECTION,
+                query_text=hop_1_query,
+                n_results=2,
+                where={"city": normalized_city},
+            )
 
         if not hop_1_results:
             ingested = self._ingest_external_city_docs(normalized_city, http_client)
@@ -230,16 +244,35 @@ class AttractionRagTool:
         return True
 
     def _delete_stale_external_attractions(self, city: str) -> None:
-        """Delete external attraction entries for a city from ChromaDB.
+        """Delete all external attraction entries for a city from ChromaDB.
 
-        Used to clear old-format entries (text-chunk names) before re-ingesting
-        with proper attraction names from Wikivoyage's See/Do sections.
+        Clears both legacy (external_wikipedia) and old-format Wikivoyage
+        entries (text-chunk names) before re-ingesting with proper attraction
+        names from Wikivoyage's See/Do sections. Curated entries are untouched.
         """
-        collection = self.vector_store.get_or_create_collection(ATTRACTIONS_COLLECTION)
-        existing = collection.get(
-            where={"$and": [{"city": city}, {"source": "external_wikivoyage"}]}
-        )
-        ids = existing.get("ids") or []
+        self._delete_external_entries(ATTRACTIONS_COLLECTION, city)
+
+    def _purge_external_city_data(self, city: str) -> None:
+        """Delete all external (non-curated) docs and attractions for a city.
+
+        Used when legacy external sources (e.g. external_wikipedia) are
+        detected in hop_1 so the tool re-fetches fresh data from Wikivoyage
+        instead of serving stale disambiguation text as attractions.
+        """
+        self._delete_external_entries(CITY_DOCS_COLLECTION, city)
+        self._delete_external_entries(ATTRACTIONS_COLLECTION, city)
+
+    def _delete_external_entries(self, collection_name: str, city: str) -> None:
+        """Delete every entry tagged with an ``external_*`` source for a city."""
+        collection = self.vector_store.get_or_create_collection(collection_name)
+        existing = collection.get(where={"city": city})
+        ids = [
+            doc_id
+            for doc_id, meta in zip(
+                existing.get("ids") or [], existing.get("metadatas") or []
+            )
+            if (meta or {}).get("source", "").startswith("external_")
+        ]
         if ids:
             collection.delete(ids=ids)
 
@@ -314,17 +347,38 @@ def _normalize_city(city: str) -> str:
     return city.strip().replace("_", " ").title()
 
 
-def _has_stale_external_names(results: list[VectorSearchResult]) -> bool:
-    """Detect old-format external entries where 'name' is a text-chunk fragment.
+def _is_legacy_external_source(source: str) -> bool:
+    """True for external sources that predate the Wikivoyage migration."""
+    return source.startswith("external_") and source != _VALID_EXTERNAL_SOURCE
 
-    Old format set name to doc.text[:60], producing sentence fragments like
-    'Liverpool is a big city in Merseyside...'. New format uses real names
-    from Wikivoyage's See/Do sections like 'Museum of Liverpool'.
+
+def _hop_1_is_legacy_external(results: list[VectorSearchResult]) -> bool:
+    """Check if hop_1 results contain legacy (non-Wikivoyage) external data."""
+    return any(
+        _is_legacy_external_source(result.metadata.get("source", ""))
+        for result in results
+    )
+
+
+def _has_stale_external_names(results: list[VectorSearchResult]) -> bool:
+    """Detect external attraction entries that should be re-ingested before use.
+
+    Flags two cases: (1) legacy external sources (e.g. external_wikipedia)
+    from before the Wikivoyage migration; (2) old-format Wikivoyage entries
+    whose 'name' is a text-chunk fragment (len > 40, e.g.
+    'Liverpool is a big city in Merseyside...'). The 'City overview
+    (section N)' name is NOT flagged here: it is the legitimate fallback used
+    when Wikivoyage has no parseable See/Do section, and is reached via the
+    hop_1 legacy purge instead.
     """
     for result in results:
         source = result.metadata.get("source", "")
         name = result.metadata.get("name", "")
-        if source.startswith("external_") and len(name) > 40:
+        if not source.startswith("external_"):
+            continue
+        if _is_legacy_external_source(source):
+            return True
+        if len(name) > 40:
             return True
     return False
 

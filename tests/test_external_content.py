@@ -77,15 +77,19 @@ def test_fetch_city_docs_uses_wikivoyage_first():
     assert all(doc.text for doc in docs)
 
 
-def test_fetch_city_docs_falls_back_to_wikipedia_when_wikivoyage_empty():
-    wikipedia_extract = "Kyoto is the capital of Kyoto Prefecture. " * 20
-    client = _mock_client(wikivoyage_extract=None, wikipedia_extract=wikipedia_extract)
+def test_fetch_city_docs_returns_empty_when_wikivoyage_empty():
+    """No Wikipedia fallback: if Wikivoyage has no usable article, return [].
+
+    The Wikipedia fallback was removed because disambiguation pages (e.g.
+    "Newcastle usually refers to:") were being ingested as city context and
+    served as attractions. Wikivoyage is now the single external source.
+    """
+    client = _mock_client(wikivoyage_extract=None, wikipedia_extract="Kyoto is the capital of Kyoto Prefecture. " * 20)
     clear_failed_cache()
 
     docs = fetch_city_docs("Kyoto", client=client, sleep_fn=_noop_sleep)
 
-    assert len(docs) >= 2
-    assert all(doc.source == "wikipedia" for doc in docs)
+    assert docs == []
 
 
 def test_fetch_city_docs_returns_empty_when_both_sources_fail():
@@ -270,8 +274,8 @@ def test_fetch_gives_up_after_max_retries_on_persistent_429():
     docs = fetch_city_docs("Oslo", client=client, sleep_fn=_noop_sleep)
 
     assert docs == []
-    # Wikivoyage: 4 attempts (1 + 3 retries), Wikipedia: 4 attempts = 8 total.
-    assert call_count == 8
+    # Wikivoyage only (no Wikipedia fallback): 4 attempts = 1 + 3 retries.
+    assert call_count == 4
 
 
 # --- Attraction parsing tests ---

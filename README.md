@@ -76,9 +76,10 @@ Copy `.env.example` to `.env` for local development.
 
 | Variable | Purpose | Required to run? |
 |---|---|---:|
-| `OPENROUTER_API_KEY` | OpenRouter LLM generation | No, fallback itinerary is used |
-| `OPENROUTER_MODEL` | OpenRouter model name | No, defaults to `nvidia/nemotron-3-ultra` |
+| `OPENROUTER_API_KEY` | OpenRouter LLM generation & embeddings | No, fallback itinerary is used |
+| `OPENROUTER_MODEL` | OpenRouter chat model name | No, defaults to `nvidia/nemotron-3-ultra` |
 | `OPENROUTER_TIMEOUT_SECONDS` | Max time to wait for OpenRouter before using fallback | No, defaults to `120` |
+| `OPENROUTER_EMBEDDING_MODEL` | OpenRouter embedding model for RAG | No, defaults to `nvidia/llama-nemotron-embed-vl-1b-v2:free` |
 | `OPENWEATHER_API_KEY` | OpenWeatherMap forecast tool | No, weather fallback is used |
 | `CHROMA_PATH` | Local ChromaDB persistence path | No, defaults to `./chroma_db` |
 
@@ -273,6 +274,7 @@ Add environment variables in Render:
 ```text
 OPENROUTER_API_KEY=<your OpenRouter key>
 OPENROUTER_MODEL=nvidia/nemotron-3-ultra
+OPENROUTER_EMBEDDING_MODEL=nvidia/llama-nemotron-embed-vl-1b-v2:free
 OPENWEATHER_API_KEY=<your OpenWeatherMap key>
 CHROMA_PATH=/opt/render/project/src/chroma_db
 ```
@@ -303,7 +305,8 @@ Mount the disk at:
 - Local ChromaDB data is not committed and may reset on cloud redeploys without a persistent disk.
 - The parser is deterministic and may miss unusual phrasing or uncommon cities.
 - Missing API keys produce fallback output for OpenRouter and OpenWeatherMap. DuckDuckGo search does not require an API key, but it can still fail due to network or rate-limit issues.
-- `sentence-transformers` and `chromadb` make installs and cold starts heavier than a basic FastAPI app.
+- `chromadb` adds some weight, but the app no longer requires `sentence-transformers` / PyTorch — embeddings are fetched via the lightweight OpenRouter API.
+- Without `OPENROUTER_API_KEY`, embedding falls back to a deterministic hash-based vector, which provides degraded retrieval but keeps the app functional.
 
 ## Project structure
 

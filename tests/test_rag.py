@@ -1,4 +1,4 @@
-from app.memory.vector_store import VectorStore
+from app.memory.vector_store import VectorStore, VectorSearchResult
 from app.tools.attraction_rag_tool import AttractionRagTool, load_attraction_documents
 from tests.fakes import FakeEmbedder
 
@@ -272,3 +272,146 @@ def test_rag_ingests_attractions_when_hop2_empty_but_hop1_external(tmp_path):
     assert result["rag_trace"]["hop_2"]
     names = {item["name"] for item in result["results"]}
     assert "Museum of Liverpool" in names or "Royal Liver Building" in names
+
+
+def test_rag_purges_legacy_external_wikipedia_data(tmp_path):
+    """Legacy external_wikipedia records (pre-Wikivoyage migration) must be
+    purged and re-fetched from Wikivoyage instead of being served as
+    attractions. Reproduces the real-world Newcastle bug where Wikipedia
+    disambiguation junk ('Newcastle usually refers to:') was returned with
+    fallback names like 'Newcastle overview (section 1)'."""
+    import httpx
+
+    from app.tools.external_content import clear_failed_cache
+
+    clear_failed_cache()
+    vector_store = VectorStore(path=str(tmp_path), embedder=FakeEmbedder())
+    tool = AttractionRagTool(vector_store=vector_store)
+    tool.seed()
+
+    # Seed stale legacy external_wikipedia data exactly as found in the real DB.
+    vector_store.add_documents(
+        "travel_city_docs",
+        documents=[
+            "Newcastle usually refers to:",
+            "Newcastle upon Tyne, a city and metropolitan borough in Tyne and Wear, England.",
+        ],
+        metadatas=[
+            {"city": "Newcastle", "type": "city_overview", "source": "external_wikipedia"},
+            {"city": "Newcastle", "type": "city_overview", "source": "external_wikipedia"},
+        ],
+        ids=["ext-wikipedia-newcastle-0", "ext-wikipedia-newcastle-1"],
+    )
+    vector_store.add_documents(
+        "travel_attractions",
+        documents=[
+            "Newcastle upon Tyne, a city and metropolitan borough in Tyne and Wear, England.",
+            "Newcastle usually refers to:",
+        ],
+        metadatas=[
+            {
+                "city": "Newcastle",
+                "type": "attraction",
+                "name": "Newcastle overview (section 1)",
+                "source": "external_wikipedia",
+                "categories": "",
+            },
+            {
+                "city": "Newcastle",
+                "type": "attraction",
+                "name": "Newcastle overview (section 0)",
+                "source": "external_wikipedia",
+                "categories": "",
+            },
+        ],
+        ids=["ext-wikipedia-newcastle-1-attr", "ext-wikipedia-newcastle-0-attr"],
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "prop=extracts" in url:
+            # Fresh Wikivoyage extract for the re-fetch.
+            return httpx.Response(
+                200,
+                json={
+                    "query": {
+                        "pages": {
+                            "1": {
+                                "title": "Newcastle",
+                                "extract": (
+                                    "Newcastle upon Tyne is a city in north-east England. "
+                                    "It is famous for its nightlife, bridges, and football. "
+                                )
+                                * 10,
+                            }
+                        }
+                    }
+                },
+            )
+        if "prop=sections" in url:
+            return httpx.Response(
+                200,
+                json={"parse": {"sections": [{"index": "5", "line": "See", "level": "2"}]}},
+            )
+        if "prop=wikitext" in url:
+            return httpx.Response(
+                200,
+                json={
+                    "parse": {
+                        "wikitext": {
+                            "*": (
+                                "==See==\n"
+                                "* {{see\n| name=Newcastle Castle\n| alt=Newcastle Castle\n"
+                                "| content=A Norman fortress in the city centre.\n}}\n"
+                                "* {{see\n| name=Angel of the North\n| alt=Angel of the North\n"
+                                "| content=A large steel sculpture nearby.\n}}"
+                            )
+                        }
+                    }
+                },
+            )
+        return httpx.Response(200, json={"query": {"pages": {"1": {"title": "Newcastle"}}}})
+
+    mock_client = httpx.Client(transport=httpx.MockTransport(handler))
+
+    result = tool.run(city="Newcastle", interests=["history"], http_client=mock_client)
+
+    assert result["status"] == "ok"
+    names = {item["name"] for item in result["results"]}
+    # Legacy junk names and disambiguation text must NOT appear.
+    assert "Newcastle overview (section 0)" not in names
+    assert "Newcastle overview (section 1)" not in names
+    assert not any("Newcastle usually refers to" in (item.get("description") or "") for item in result["results"])
+    # Real Wikivoyage attractions must be served instead.
+    assert {"Newcastle Castle", "Angel of the North"} <= names
+    # hop_1 must be Wikivoyage now, not legacy wikipedia.
+    assert result["rag_trace"]["hop_1"]
+    assert result["rag_trace"]["hop_1"][0]["metadata"]["source"] == "external_wikivoyage"
+
+    # Legacy entries must be gone from the DB entirely.
+    attractions = vector_store.get_or_create_collection("travel_attractions").get(where={"city": "Newcastle"})
+    sources = {(m or {}).get("source") for m in attractions.get("metadatas", [])}
+    assert "external_wikipedia" not in sources
+
+
+def test_has_stale_external_names_detects_legacy_and_fragments():
+    """Staleness detection flags legacy sources and long text-chunk fragment
+    names, but NOT the legitimate 'City overview (section N)' Wikivoyage
+    fallback (used when See/Do parsing fails) or curated entries."""
+    from app.tools.attraction_rag_tool import _has_stale_external_names
+
+    def _result(name: str, source: str) -> VectorSearchResult:
+        return VectorSearchResult(id="x", document="d", metadata={"name": name, "source": source})
+
+    # Legacy wikipedia source is always stale, even with a short fallback name.
+    assert _has_stale_external_names([_result("Newcastle overview (section 0)", "external_wikipedia")])
+    # Old-format text-chunk fragment name (>40 chars) is stale.
+    assert _has_stale_external_names(
+        [_result("Liverpool is a big city in Merseyside, England famed for its", "external_wikivoyage")]
+    )
+    # Wikivoyage 'overview (section N)' fallback is the legitimate fallback, NOT stale.
+    assert not _has_stale_external_names([_result("Liverpool overview (section 3)", "external_wikivoyage")])
+    # Real Wikivoyage attraction name is not stale.
+    assert not _has_stale_external_names([_result("Museum of Liverpool", "external_wikivoyage")])
+    # Curated entries are never stale.
+    assert not _has_stale_external_names([_result("Akihabara", "")])

@@ -8,6 +8,8 @@ services:
     envVars:
       - key: OPENROUTER_MODEL
         value: nvidia/nemotron-3-ultra
+      - key: OPENROUTER_EMBEDDING_MODEL
+        value: nvidia/llama-nemotron-embed-vl-1b-v2:free
       - key: CHROMA_PATH
         value: /opt/render/project/src/chroma_db
       - key: OPENROUTER_API_KEY
