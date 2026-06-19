@@ -6,7 +6,11 @@ import httpx
 from pydantic import BaseModel, Field
 
 from app.memory.vector_store import VectorSearchResult, VectorStore
-from app.tools.external_content import external_docs_to_vectors, fetch_city_docs
+from app.tools.external_content import (
+    external_docs_to_vectors,
+    fetch_city_attractions,
+    fetch_city_docs,
+)
 
 
 CITY_DOCS_COLLECTION = "travel_city_docs"
@@ -114,11 +118,12 @@ class AttractionRagTool:
         city: str,
         http_client: httpx.Client | None,
     ) -> bool:
-        """Fetch external city docs and embed them into city_docs and attractions.
+        """Fetch external city docs and attractions, embedding both into ChromaDB.
 
-        External content serves as both city overview (hop_1) and attraction
-        context (hop_2) since there is no curated attraction data for unknown
-        cities. Returns True if any docs were ingested, False otherwise.
+        City overview text goes into the city_docs collection (hop_1).
+        Parsed attractions from Wikivoyage's See/Do sections go into the
+        attractions collection (hop_2) with real names instead of text chunks.
+        Returns True if any docs were ingested, False otherwise.
         """
         docs = fetch_city_docs(city, client=http_client)
         if not docs:
@@ -130,19 +135,43 @@ class AttractionRagTool:
             metadatas=payload["metadatas"],
             ids=payload["ids"],
         )
-        # Also add to attractions collection so hop_2 can retrieve content for
-        # cities without curated attraction data.
-        attraction_metadatas = [
-            {**meta, "type": "attraction", "name": doc.text[:60]}
-            for meta, doc in zip(payload["metadatas"], docs)
-        ]
-        attraction_ids = [f"{doc_id}-attr" for doc_id in payload["ids"]]
-        self.vector_store.add_documents(
-            ATTRACTIONS_COLLECTION,
-            documents=payload["documents"],
-            metadatas=attraction_metadatas,
-            ids=attraction_ids,
-        )
+
+        # Try to fetch real attractions from Wikivoyage's See/Do sections.
+        attractions = fetch_city_attractions(city, client=http_client)
+        if attractions:
+            self.vector_store.add_documents(
+                ATTRACTIONS_COLLECTION,
+                documents=[
+                    f"{a.name} in {a.city}. {a.description}" for a in attractions
+                ],
+                metadatas=[
+                    {
+                        "city": a.city,
+                        "type": "attraction",
+                        "name": a.name,
+                        "source": f"external_{a.source}",
+                        "categories": "",
+                    }
+                    for a in attractions
+                ],
+                ids=[
+                    f"ext-{a.source}-{a.city.lower().replace(' ', '-')}-{a.name.lower().replace(' ', '-')}"
+                    for a in attractions
+                ],
+            )
+        else:
+            # Fallback: add city docs to attractions collection without real names.
+            attraction_metadatas = [
+                {**meta, "type": "attraction", "name": f"{city} overview (section {i})"}
+                for i, meta in enumerate(payload["metadatas"])
+            ]
+            attraction_ids = [f"{doc_id}-attr" for doc_id in payload["ids"]]
+            self.vector_store.add_documents(
+                ATTRACTIONS_COLLECTION,
+                documents=payload["documents"],
+                metadatas=attraction_metadatas,
+                ids=attraction_ids,
+            )
         return True
 
     def _seed_city_docs(self) -> None:

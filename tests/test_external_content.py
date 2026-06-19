@@ -4,9 +4,12 @@ import httpx
 
 from app.tools.external_content import (
     _chunk_extract,
+    _clean_wikitext,
+    _parse_attractions_from_wikitext,
     _retry_after_seconds,
     clear_failed_cache,
     external_docs_to_vectors,
+    fetch_city_attractions,
     fetch_city_docs,
 )
 
@@ -269,3 +272,151 @@ def test_fetch_gives_up_after_max_retries_on_persistent_429():
     assert docs == []
     # Wikivoyage: 4 attempts (1 + 3 retries), Wikipedia: 4 attempts = 8 total.
     assert call_count == 8
+
+
+# --- Attraction parsing tests ---
+
+
+_WIKIVOYAGE_SEE_WIKITEXT = """==See==
+{{Mapframe|53.4029393|-2.9956251|zoom=15}}
+Liverpool is particularly famous for its architecture.
+
+=== Pier Head ===
+* {{see
+| name=Museum of Liverpool | alt= | url=http://www.liverpoolmuseums.org.uk/mol/ | email=
+| address=Pier Head, Liverpool Waterfront, Liverpool L3 1DG | lat=53.402939 | long=-2.995625
+| phone=+44 151 478-4545 | tollfree=
+| hours=10AM-5PM | price=Free
+| wikipedia=Museum of Liverpool
+| content=A large museum all about the city of Liverpool and its history from ancient inhabitants to its modern revival.
+}}
+* {{see
+| name=Royal Liver Building | alt= | url= | email=
+| address= | lat=53.40585 | long=-2.99592
+| content=Iconic symbol of Liverpool waterfront. This 1911 skyscraper still dominates the distinctive Liverpool skyline.
+}}
+* '''Titanic Memorial''' is north side of the Royal Liver Building, a sober granite monument to the 244 engineers lost with the ship.
+
+=== Albert Dock ===
+* {{see
+| name=Merseyside Maritime Museum | alt= | url= | email=
+| content=Museum with permanent gallery devoted to the ''Titanic'', ''Lusitania'' and ''Fortyacre''.
+}}
+* {{see
+| name=The Beatles Story | alt=Fab4D Cinema | url=http://www.beatlesstory.com/
+| content=A film telling a story using The Beatles as a theme. Not to be confused with the [[Cavern Club]].
+}}
+"""
+
+
+def test_parse_attractions_extracts_see_template_entries():
+    attractions = _parse_attractions_from_wikitext(_WIKIVOYAGE_SEE_WIKITEXT, "Liverpool")
+
+    names = {a.name for a in attractions}
+    assert "Museum of Liverpool" in names
+    assert "Royal Liver Building" in names
+    assert "Merseyside Maritime Museum" in names
+    assert "The Beatles Story" in names
+
+
+def test_parse_attractions_extracts_bold_name_entries():
+    attractions = _parse_attractions_from_wikitext(_WIKIVOYAGE_SEE_WIKITEXT, "Liverpool")
+
+    names = {a.name for a in attractions}
+    assert "Titanic Memorial" in names
+
+
+def test_parse_attractions_cleans_wikitext_markup_from_descriptions():
+    attractions = _parse_attractions_from_wikitext(_WIKIVOYAGE_SEE_WIKITEXT, "Liverpool")
+
+    beatles = next(a for a in attractions if a.name == "The Beatles Story")
+    # Wiki links like [[Cavern Club]] should be cleaned to plain text.
+    assert "[[" not in beatles.description
+    assert "Cavern Club" in beatles.description
+    # Italic markers '' should be removed.
+    maritime = next(a for a in attractions if a.name == "Merseyside Maritime Museum")
+    assert "''" not in maritime.description
+
+
+def test_parse_attractions_returns_empty_for_no_templates():
+    wikitext = "This is just a plain paragraph with no attraction listings."
+
+    attractions = _parse_attractions_from_wikitext(wikitext, "TestCity")
+
+    assert attractions == []
+
+
+def test_clean_wikitext_strips_links_bold_italic_and_templates():
+    raw = "Visit the '''[[Royal Albert Dock|Albert Dock]]''' for {{free}} entry to ''galleries''."
+
+    cleaned = _clean_wikitext(raw)
+
+    assert "''" not in cleaned
+    assert "[[" not in cleaned
+    assert "{{" not in cleaned
+    assert "Albert Dock" in cleaned
+    assert "galleries" in cleaned
+
+
+def test_fetch_city_attractions_with_mock_api():
+    """End-to-end test with a mock Wikivoyage API returning sections and wikitext."""
+    clear_failed_cache()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "prop=sections" in url:
+            return httpx.Response(
+                200,
+                json={
+                    "parse": {
+                        "title": "Liverpool",
+                        "sections": [
+                            {"index": "1", "line": "Understand", "level": "2"},
+                            {"index": "17", "line": "See", "level": "2"},
+                            {"index": "24", "line": "Do", "level": "2"},
+                        ],
+                    }
+                },
+            )
+        if "prop=wikitext" in url:
+            return httpx.Response(
+                200,
+                json={
+                    "parse": {
+                        "title": "Liverpool",
+                        "wikitext": {"*": _WIKIVOYAGE_SEE_WIKITEXT},
+                    }
+                },
+            )
+        return httpx.Response(404, json={"error": "not found"})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    attractions = fetch_city_attractions("Liverpool", client=client, sleep_fn=_noop_sleep)
+
+    assert len(attractions) >= 4
+    assert all(a.city == "Liverpool" for a in attractions)
+    assert all(a.name for a in attractions)
+    assert any(a.name == "Museum of Liverpool" for a in attractions)
+
+
+def test_fetch_city_attractions_returns_empty_when_no_see_section():
+    clear_failed_cache()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "parse": {
+                    "title": "SmallTown",
+                    "sections": [
+                        {"index": "1", "line": "Understand", "level": "2"},
+                        {"index": "2", "line": "Get in", "level": "2"},
+                    ],
+                }
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    attractions = fetch_city_attractions("SmallTown", client=client, sleep_fn=_noop_sleep)
+
+    assert attractions == []

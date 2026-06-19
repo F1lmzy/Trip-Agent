@@ -44,6 +44,9 @@ _INTER_SOURCE_DELAY_SECONDS = 1.0
 _failed_fetch_cache: dict[str, float] = {}
 _FAILED_CACHE_TTL_SECONDS = 300.0  # 5 minutes
 
+# Section names in Wikivoyage that list actual attractions.
+_SEE_SECTION_NAMES = ["See", "Do"]
+
 
 @dataclass
 class ExternalDoc:
@@ -53,6 +56,213 @@ class ExternalDoc:
     city: str
     text: str
     source: str
+
+
+@dataclass
+class ExternalAttraction:
+    """A parsed attraction from Wikivoyage with a real name and description."""
+
+    name: str
+    city: str
+    description: str
+    source: str = "wikivoyage"
+
+
+def fetch_city_attractions(
+    city: str,
+    client: httpx.Client | None = None,
+    timeout: float = 15.0,
+    sleep_fn: Callable[[float], None] | None = None,
+) -> list[ExternalAttraction]:
+    """Fetch real attractions for a city from Wikivoyage's See/Do sections.
+
+    Uses the parse API to get section wikitext, then extracts {{see}} and
+    {{do}} template entries which contain structured name/description pairs.
+
+    Args:
+        city: City name (e.g. "Liverpool").
+        client: Optional httpx client for testability.
+        timeout: Request timeout in seconds.
+        sleep_fn: Optional sleep function for testability.
+
+    Returns:
+        List of ExternalAttraction with real names, or empty list on failure.
+    """
+    normalized = city.strip().replace("_", " ").title()
+    sleeper = sleep_fn or time.sleep
+
+    section_index = _find_section_index(normalized, "See", client, timeout, sleeper)
+    if section_index is None:
+        section_index = _find_section_index(normalized, "Do", client, timeout, sleeper)
+    if section_index is None:
+        return []
+
+    wikitext = _fetch_section_wikitext(normalized, section_index, client, timeout, sleeper)
+    if not wikitext:
+        return []
+
+    return _parse_attractions_from_wikitext(wikitext, normalized)
+
+
+def _find_section_index(
+    city: str,
+    section_name: str,
+    client: httpx.Client | None,
+    timeout: float,
+    sleep_fn: Callable[[float], None],
+) -> str | None:
+    """Find the section index for a given section name via the parse API."""
+    cache_key = f"{city.lower()}:sections"
+    if _is_recently_failed(cache_key):
+        return None
+
+    params = {
+        "action": "parse",
+        "format": "json",
+        "page": city,
+        "prop": "sections",
+    }
+    headers = {"User-Agent": _USER_AGENT}
+
+    try:
+        response = _do_request(params, headers, client, timeout, sleep_fn)
+        if response is None:
+            _mark_failed(cache_key)
+            return None
+
+        sections = response.get("parse", {}).get("sections", [])
+        for section in sections:
+            if section.get("line", "").strip().lower() == section_name.lower():
+                return str(section.get("index"))
+    except (KeyError, TypeError, ValueError):
+        _mark_failed(cache_key)
+        return None
+
+    return None
+
+
+def _fetch_section_wikitext(
+    city: str,
+    section_index: str,
+    client: httpx.Client | None,
+    timeout: float,
+    sleep_fn: Callable[[float], None],
+) -> str:
+    """Fetch the wikitext of a specific section."""
+    cache_key = f"{city.lower()}:section-{section_index}"
+    if _is_recently_failed(cache_key):
+        return ""
+
+    params = {
+        "action": "parse",
+        "format": "json",
+        "page": city,
+        "section": section_index,
+        "prop": "wikitext",
+    }
+    headers = {"User-Agent": _USER_AGENT}
+
+    try:
+        response = _do_request(params, headers, client, timeout, sleep_fn)
+        if response is None:
+            _mark_failed(cache_key)
+            return ""
+
+        return response.get("parse", {}).get("wikitext", {}).get("*", "")
+    except (KeyError, TypeError, ValueError):
+        _mark_failed(cache_key)
+        return ""
+
+
+def _do_request(
+    params: dict[str, str],
+    headers: dict[str, str],
+    client: httpx.Client | None,
+    timeout: float,
+    sleep_fn: Callable[[float], None],
+) -> dict | None:
+    """Make an API request with retry logic, returning parsed JSON or None."""
+    backoff = _INITIAL_BACKOFF_SECONDS
+    for attempt in range(_MAX_RETRIES + 1):
+        try:
+            if client is None:
+                with httpx.Client(timeout=timeout) as owned:
+                    response = owned.get(_WIKIVOYAGE_API, params=params, headers=headers)
+            else:
+                response = client.get(_WIKIVOYAGE_API, params=params, headers=headers)
+
+            if response.status_code == 429:
+                if attempt < _MAX_RETRIES:
+                    sleep_fn(_retry_after_seconds(response, backoff))
+                    backoff = min(backoff * 2, _MAX_BACKOFF_SECONDS)
+                    continue
+                return None
+
+            if response.status_code >= 500:
+                if attempt < _MAX_RETRIES:
+                    sleep_fn(backoff)
+                    backoff = min(backoff * 2, _MAX_BACKOFF_SECONDS)
+                    continue
+                return None
+
+            response.raise_for_status()
+            return response.json()
+        except (httpx.HTTPError, ValueError):
+            if attempt < _MAX_RETRIES:
+                sleep_fn(backoff)
+                backoff = min(backoff * 2, _MAX_BACKOFF_SECONDS)
+                continue
+            return None
+
+    return None
+
+
+def _parse_attractions_from_wikitext(wikitext: str, city: str) -> list[ExternalAttraction]:
+    """Parse {{see}} and {{do}} templates from Wikivoyage wikitext.
+
+    Also captures '''Bold Name''' entries as a fallback format.
+    """
+    attractions: list[ExternalAttraction] = []
+
+    # Format 1: {{see | name=... | content=... }} and {{do | name=... | content=... }}
+    template_pattern = r"\{\{(see|do)\s*\n\| name=([^|]+)\|.*?\| content=([^}]+)\}\}"
+    for _template_type, name, content in re.findall(template_pattern, wikitext, flags=re.DOTALL):
+        clean_name = _clean_wikitext(name.strip())
+        clean_content = _clean_wikitext(content.strip())
+        if clean_name and len(clean_name) < 80:
+            attractions.append(
+                ExternalAttraction(name=clean_name, city=city, description=clean_content)
+            )
+
+    # Format 2: '''Bold Name''' entries (simpler listings without templates)
+    bold_pattern = r"'''([^']{2,60})'''(?: is |,)?(.+?)(?=\n\n|\n\*|\n\{|$)"
+    for name, desc in re.findall(bold_pattern, wikitext):
+        clean_name = _clean_wikitext(name.strip())
+        clean_desc = _clean_wikitext(desc.strip())
+        if clean_name and not any(a.name == clean_name for a in attractions):
+            attractions.append(
+                ExternalAttraction(name=clean_name, city=city, description=clean_desc)
+            )
+
+    return attractions
+
+
+def _clean_wikitext(text: str) -> str:
+    """Strip wikitext markup from a string to produce readable plain text."""
+    # Remove wiki links: [[Article|Display]] -> Display, [[Article]] -> Article
+    text = re.sub(r"\[\[[^]]*\|([^]]+)\]\]", r"\1", text)
+    text = re.sub(r"\[\[([^]]+)\]\]", r"\1", text)
+    # Remove file/image links
+    text = re.sub(r"\[\[(?:File|Image):[^]]+\]\]", "", text)
+    # Remove templates: {{...}}
+    text = re.sub(r"\{\{[^}]+\}\}", "", text)
+    # Remove bold/italic markers
+    text = text.replace("'''", "").replace("''", "")
+    # Remove HTML tags
+    text = re.sub(r"<[^>]+>", "", text)
+    # Collapse whitespace
+    text = " ".join(text.split())
+    return text.strip(" -.;|")
 
 
 def fetch_city_docs(
