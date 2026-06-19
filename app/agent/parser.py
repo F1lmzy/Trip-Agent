@@ -69,6 +69,8 @@ class ParsedRequest(BaseModel):
     constraints: list[str] = Field(default_factory=list)
     asks_for_hotel: bool = False
     asks_for_current_info: bool = False
+    asks_for_flights: bool = False
+    origin_city: str | None = None
     is_follow_up: bool = False
     follow_up_intent: str | None = None
 
@@ -90,6 +92,10 @@ def parse_user_request(message: str) -> ParsedRequest:
             normalized, ["hotel", "hotels", "stay", "accommodation", "lodging", "place to stay", "places to stay"]
         ),
         asks_for_current_info=_contains_any(normalized, CURRENT_INFO_KEYWORDS),
+        asks_for_flights=_contains_any(
+            normalized, ["flight", "flights", "fly", "airfare", "plane", "air ticket", "air tickets"]
+        ),
+        origin_city=_extract_origin_city(message),
         is_follow_up=_extract_follow_up_intent(normalized) is not None,
         follow_up_intent=_extract_follow_up_intent(normalized),
     )
@@ -177,6 +183,20 @@ def _extract_follow_up_intent(normalized: str) -> str | None:
         return "more_museums"
     if _contains_any(normalized, ["make it relaxed", "more relaxed", "slower pace"]):
         return "change_pace"
+    return None
+
+
+def _extract_origin_city(message: str) -> str | None:
+    """Extract a departure/origin city from phrases like 'from London' or 'flying from Mumbai'."""
+    patterns = [
+        r"\b(?:from|flying from|departing from|leaving from)\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, message, flags=re.IGNORECASE)
+        if match:
+            candidate = _clean_city_candidate(match.group(1))
+            if candidate and candidate.lower() not in {"home", "here", "there", "airport"}:
+                return candidate
     return None
 
 

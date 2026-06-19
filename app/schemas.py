@@ -30,3 +30,24 @@ class MemoryResponse(BaseModel):
 
 class StatusResponse(BaseModel):
     status: str
+
+
+class HealthResponse(BaseModel):
+    status: str
+    tools_available: int = 0
+    mcp_endpoint: str = "/mcp"
+    openrouter_configured: bool = False
+    openweather_configured: bool = False
+
+
+class ToolInfoResponse(BaseModel):
+    id: str
+    name: str
+    description: str
+    type: str = "local"
+    selected: bool = True
+
+
+class ToolsListResponse(BaseModel):
+    tools: list[ToolInfoResponse] = Field(default_factory=list)
+    total: int = 0

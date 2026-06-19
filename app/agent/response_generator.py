@@ -119,7 +119,7 @@ def _itinerary_from_llm_content(parsed: ParsedRequest, content: str, tool_output
         "city": city,
         "duration_days": duration_days,
         "status": "generated_with_openrouter",
-        "notes": [note for note in [_weather_note(tool_outputs), _budget_note(tool_outputs), _web_search_note(tool_outputs)] if note],
+        "notes": [note for note in [_weather_note(tool_outputs), _budget_note(tool_outputs), _web_search_note(tool_outputs), _flight_note(tool_outputs)] if note],
     }
 
     fallback = _fallback_itinerary(parsed, tool_outputs)
@@ -168,12 +168,13 @@ def _fallback_itinerary(parsed: ParsedRequest, tool_outputs: dict[str, Any]) -> 
     weather_note = _weather_note(tool_outputs)
     budget_note = _budget_note(tool_outputs)
     web_note = _web_search_note(tool_outputs)
+    flight_note = _flight_note(tool_outputs)
 
     itinerary: dict[str, Any] = {
         "city": city,
         "duration_days": duration_days,
         "status": "generated_with_fallback_template",
-        "notes": [note for note in [weather_note, budget_note, hotel_note, web_note] if note],
+        "notes": [note for note in [weather_note, budget_note, hotel_note, web_note, flight_note] if note],
     }
 
     for day in range(1, duration_days + 1):
@@ -295,3 +296,18 @@ def _budget_note(tool_outputs: dict[str, Any]) -> str | None:
 
 def _extract_rag_trace(tool_outputs: dict[str, Any]) -> dict[str, Any]:
     return tool_outputs.get("attraction_rag_tool", {}).get("rag_trace", {})
+
+
+def _flight_note(tool_outputs: dict[str, Any]) -> str | None:
+    flight = tool_outputs.get("flight_tool", {})
+    if flight.get("status") != "ok":
+        return None
+    departure = flight.get("results", {}).get("departure_flights", [])
+    if not departure:
+        return None
+    first = departure[0]
+    return (
+        f"Flight note: {first.get('airline')} {first.get('flight_number')} from "
+        f"{flight.get('from_location')} to {flight.get('to_location')} from "
+        f"${first.get('price')}."
+    )

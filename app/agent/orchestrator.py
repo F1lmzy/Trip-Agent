@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from typing import Any
+import re
 
 import httpx
 
@@ -12,6 +13,7 @@ from app.memory.short_term import ShortTermMemory, short_term_memory
 from app.schemas import ChatRequest, ChatResponse
 from app.tools.attraction_rag_tool import AttractionRagTool, has_curated_rag_city
 from app.tools.budget_tool import run_budget_tool
+from app.tools.flight_tool import run_flight_tool
 from app.tools.hotel_tool import run_hotel_tool
 from app.tools.weather_tool import run_weather_tool
 from app.tools.web_search_tool import run_web_search_tool
@@ -105,12 +107,48 @@ def _execute_tools(parsed: ParsedRequest, plan: PlanningResult, services: AgentS
     if "hotel_tool" in selected_tools:
         tool_outputs["hotel_tool"] = run_hotel_tool(parsed.city, parsed.budget)
 
+    if "flight_tool" in selected_tools and parsed.origin_city:
+        tool_outputs["flight_tool"] = run_flight_tool(
+            from_location=parsed.origin_city,
+            to_location=parsed.city,
+            departure_date=_resolve_departure_date(parsed),
+            return_date=_resolve_return_date(parsed, parsed.duration_days),
+            budget=parsed.budget,
+        )
+
     return tool_outputs
 
 
 def _fresh_travel_search_intent(parsed: ParsedRequest) -> str:
     interests = ", ".join(parsed.interests) if parsed.interests else "highlights, food, markets, neighborhoods"
     return f"top attractions, specific places, {interests}, {parsed.duration_days} day itinerary"
+
+
+def _resolve_departure_date(parsed: ParsedRequest) -> str:
+    """Resolve an ISO departure date from parsed dates or default to today."""
+    from datetime import date, datetime
+
+    if parsed.dates:
+        match = re.match(r"([A-Za-z]+\s+\d{1,2})", parsed.dates)
+        if match:
+            try:
+                parsed_date = datetime.strptime(f"{match.group(1)} {date.today().year}", "%B %d %Y").date()
+                return parsed_date.isoformat()
+            except ValueError:
+                pass
+    return date.today().isoformat()
+
+
+def _resolve_return_date(parsed: ParsedRequest, duration_days: int) -> str | None:
+    """Resolve an ISO return date based on departure date plus duration."""
+    from datetime import date, datetime, timedelta
+
+    departure = _resolve_departure_date(parsed)
+    try:
+        departure_date = datetime.strptime(departure, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+    return (departure_date + timedelta(days=max(1, duration_days))).isoformat()
 
 
 def _build_clarification_response(plan: PlanningResult) -> ChatResponse:

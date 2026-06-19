@@ -32,7 +32,12 @@ def test_health_returns_ok():
     response = client.get("/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body["tools_available"] == 6
+    assert body["mcp_endpoint"] == "/mcp"
+    assert isinstance(body["openrouter_configured"], bool)
+    assert isinstance(body["openweather_configured"], bool)
 
 
 def test_index_returns_html():
@@ -95,3 +100,59 @@ def test_memory_endpoints_store_get_and_clear_preferences(monkeypatch, tmp_path)
     assert delete_response.json() == {"status": "memory cleared"}
     assert after_delete_response.status_code == 200
     assert after_delete_response.json() == {"user_id": user_id, "memories": []}
+
+
+def test_api_tools_lists_all_registered_tools():
+    response = client.get("/api/tools")
+
+    assert response.status_code == 200
+    body = response.json()
+    tool_ids = {tool["id"] for tool in body["tools"]}
+    assert tool_ids == {
+        "attraction_rag_tool",
+        "weather_tool",
+        "budget_tool",
+        "hotel_tool",
+        "flight_tool",
+        "web_search_tool",
+    }
+    assert body["total"] == 6
+    assert all(tool["name"] for tool in body["tools"])
+
+
+def test_chat_stream_emits_sse_events_with_result(monkeypatch, tmp_path):
+    install_test_long_term_memory(monkeypatch, tmp_path)
+    install_test_agent_services(monkeypatch, tmp_path)
+
+    with client.stream(
+        "POST", "/chat/stream", json={"user_id": "stream-user", "message": "Plan Tokyo"}
+    ) as response:
+        assert response.status_code == 200
+        assert "text/event-stream" in response.headers["content-type"]
+
+        frames = [line for line in response.iter_lines() if line.startswith("data: ")]
+
+    assert frames, "expected at least one SSE frame"
+    import json
+
+    events = [json.loads(frame[len("data: ") :]) for frame in frames]
+    event_types = {event["type"] for event in events}
+    assert "plan" in event_types
+    assert "result" in event_types
+    result_event = next(event for event in events if event["type"] == "result")
+    assert result_event["response"]["itinerary"]["city"] == "Tokyo"
+
+
+def test_chat_stream_emits_clarification_when_city_missing(monkeypatch, tmp_path):
+    install_test_long_term_memory(monkeypatch, tmp_path)
+    install_test_agent_services(monkeypatch, tmp_path)
+
+    with client.stream(
+        "POST", "/chat/stream", json={"user_id": "stream-clarify", "message": "Plan me a trip"}
+    ) as response:
+        frames = [line for line in response.iter_lines() if line.startswith("data: ")]
+
+    import json
+
+    events = [json.loads(frame[len("data: ") :]) for frame in frames]
+    assert any(event["type"] == "clarification" for event in events)

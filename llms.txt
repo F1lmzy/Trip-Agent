@@ -1,0 +1,59 @@
+# Intelligent Travel Planning AI Agent
+
+> A FastAPI travel-planning agent that creates personalized itineraries with visible planning steps, tool use, short-term and long-term ChromaDB memory, multi-hop RAG, MCP-exposed tools, and SSE streaming.
+
+## What this project does
+
+- Accepts a natural-language trip request via a chat API and returns a structured day-by-day itinerary.
+- Dynamically selects tools based on parsed intent (city, interests, budget, dates, hotel/flight requests).
+- Exposes all tools as an MCP (Model Context Protocol) server so any MCP client can call them.
+- Streams the planning and tool-execution flow to the UI via Server-Sent Events.
+
+## Tools (also available as MCP tools at /mcp)
+
+- `search_attractions` — Multi-hop ChromaDB RAG retrieval of attractions for a city.
+- `get_weather` — Near-term weather forecast via OpenWeatherMap (graceful fallback without API key).
+- `apply_budget` — Low/medium/luxury budget guidance for meals, hotels, activities, transport.
+- `suggest_hotels` — Curated mock hotel suggestions filtered by budget.
+- `suggest_flights` — Mock flight suggestions between two locations and dates.
+- `web_search` — Fresh travel context via LangChain DuckDuckGo search (no API key required).
+
+## API endpoints
+
+- `GET /health` — Health check with tool count and configuration status.
+- `GET /` — Minimal HTML chat frontend.
+- `POST /chat` — Synchronous chat returning a full ChatResponse.
+- `POST /chat/stream` — Server-Sent Events stream of the chat flow (plan, tool, message, result events).
+- `GET /api/tools` — List all available tools with metadata.
+- `GET /memory/{user_id}` — Retrieve stored long-term preferences.
+- `POST /memory/{user_id}` — Save a preference.
+- `DELETE /memory/{user_id}` — Clear stored preferences.
+- `MCP /mcp` — Model Context Protocol streamable-http endpoint for tool access.
+
+## Request/response shape
+
+Request:
+```json
+{"user_id": "kavin", "message": "Plan a 2-day trip to Tokyo. I like anime and food. Medium budget."}
+```
+
+Response includes: `message`, `itinerary` (day_1/day_2 with morning/afternoon/evening), `tools_used`, `plan`, `rag_trace`, `memory_used`, `needs_clarification`.
+
+## Tech stack
+
+- Python 3.11, FastAPI, Uvicorn, Pydantic
+- OpenRouter for LLM generation (optional, deterministic fallback without it)
+- OpenWeatherMap for weather (optional, fallback without it)
+- ChromaDB + sentence-transformers for RAG and long-term memory
+- LangChain Community + DuckDuckGo for web search
+- MCP Python SDK (FastMCP) for tool exposure
+- pytest for tests
+
+## Running
+
+```bash
+pip install -r requirements.txt
+uvicorn app.main:app --reload
+```
+
+Open http://127.0.0.1:8000/ for the frontend, /docs for Swagger UI, /mcp for the MCP endpoint.

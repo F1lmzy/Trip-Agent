@@ -150,6 +150,30 @@ def test_handle_chat_executes_hotel_tool_when_requested(tmp_path):
     assert any("hotel" in note.lower() or "staying" in note.lower() for note in response.itinerary["notes"])
 
 
+def test_handle_chat_executes_flight_tool_when_origin_and_flights_requested(tmp_path):
+    response = handle_chat(
+        ChatRequest(user_id="kavin", message="Plan a 2-day Tokyo trip flying from London. Medium budget."),
+        memory=ShortTermMemory(),
+        user_memory=make_long_term_memory(tmp_path),
+        services=make_services(tmp_path),
+    )
+
+    assert "flight_tool" in response.tools_used
+    assert response.itinerary["city"] == "Tokyo"
+    assert any("flight" in note.lower() for note in response.itinerary["notes"])
+
+
+def test_handle_chat_does_not_call_flight_tool_without_origin(tmp_path):
+    response = handle_chat(
+        ChatRequest(user_id="kavin", message="Plan a 2-day Tokyo trip with flights. Medium budget."),
+        memory=ShortTermMemory(),
+        user_memory=make_long_term_memory(tmp_path),
+        services=make_services(tmp_path),
+    )
+
+    assert "flight_tool" not in response.tools_used
+
+
 def test_handle_chat_saves_stable_preferences(tmp_path):
     user_memory = make_long_term_memory(tmp_path)
 

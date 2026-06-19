@@ -48,6 +48,10 @@ def create_trip_plan(parsed: ParsedRequest, rag_context_is_weak: bool = False) -
         selected_tools.append("hotel_tool")
         plan.append("Retrieve hotel recommendations")
 
+    if parsed.asks_for_flights and parsed.origin_city:
+        selected_tools.append("flight_tool")
+        plan.append("Suggest flights from origin to destination")
+
     plan.extend(
         [
             "Generate a structured itinerary",

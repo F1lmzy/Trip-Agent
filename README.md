@@ -1,11 +1,12 @@
 # Intelligent Travel Planning AI Agent
 
-A FastAPI travel-planning agent that creates personalized 2-day itineraries with visible planning steps, tool use, short-term memory, long-term ChromaDB memory, and multi-hop RAG.
+A FastAPI travel-planning agent that creates personalized 2-day itineraries with visible planning steps, tool use, short-term memory, long-term ChromaDB memory, multi-hop RAG, MCP-exposed tools, and SSE streaming.
 
 ## Features
 
 - Minimal HTML frontend at `/`
-- Chat API at `/chat`
+- Chat API at `/chat` and streaming chat at `/chat/stream`
+- All tools exposed as an MCP (Model Context Protocol) server at `/mcp`
 - Custom parser and planner with visible reasoning steps
 - Tool use:
   - `attraction_rag_tool` for multi-hop city and attraction retrieval
@@ -13,9 +14,13 @@ A FastAPI travel-planning agent that creates personalized 2-day itineraries with
   - `budget_tool` for low/medium/luxury guidance
   - `web_search_tool` using LangChain's DuckDuckGo search integration for current or recent context
   - `hotel_tool` for lodging requests
+  - `flight_tool` for mock flight suggestions between two locations and dates
 - Short-term in-process conversation memory
 - Long-term ChromaDB user preference memory
 - OpenRouter response generation with deterministic fallback when unavailable
+- `/api/tools` endpoint listing all available tools
+- Enriched `/health` endpoint with tool count and configuration status
+- `llms.txt` for LLM-friendly project information
 
 ## Architecture
 
@@ -23,13 +28,16 @@ A FastAPI travel-planning agent that creates personalized 2-day itineraries with
 FastAPI app (`app/main.py`)
   ├── Static frontend (`app/static/index.html`)
   ├── Schemas (`app/schemas.py`)
+  ├── MCP server (`app/mcp_server.py`) — exposes 6 tools at /mcp
   ├── Agent orchestration (`app/agent/orchestrator.py`)
   │   ├── Parser (`app/agent/parser.py`)
   │   ├── Planner (`app/agent/planner.py`)
+  │   ├── Streaming (`app/agent/streaming.py`) — SSE event generation
   │   ├── OpenRouter client + response generator
   │   ├── Short-term memory
   │   ├── Long-term ChromaDB memory
   │   └── Tools (`app/tools/*`)
+  │       └── Registry (`app/tools/registry.py`) — tool metadata
   └── Seed data (`app/data/*`)
 ```
 
@@ -93,6 +101,17 @@ Expected:
 - `plan` shows the planning steps
 - `rag_trace` includes `hop_1` and `hop_2`
 
+### Flight request
+
+```text
+Plan a 2-day trip to Tokyo flying from London. Medium budget.
+```
+
+Expected:
+
+- `tools_used` includes `flight_tool`
+- `itinerary.notes` includes a flight summary
+
 ### Current-info trip
 
 ```text
@@ -151,9 +170,46 @@ curl http://127.0.0.1:8000/health
 ```
 
 ```bash
+curl http://127.0.0.1:8000/api/tools
+```
+
+```bash
 curl -X POST http://127.0.0.1:8000/chat \
   -H 'Content-Type: application/json' \
   -d '{"user_id":"kavin","message":"Plan a 2-day trip to Tokyo with anime and food. Medium budget."}'
+```
+
+### Streaming chat (Server-Sent Events)
+
+```bash
+curl -N -X POST http://127.0.0.1:8000/chat/stream \
+  -H 'Content-Type: application/json' \
+  -d '{"user_id":"kavin","message":"Plan a 2-day trip to Tokyo with anime and food."}'
+```
+
+The stream emits `plan`, `tool_start`, `tool_end`, `message`, and `result` events as SSE frames, ending with the full `ChatResponse` payload.
+
+## MCP server
+
+All six tools are exposed as an MCP (Model Context Protocol) server at `/mcp` using the streamable-http transport. Any MCP-compatible client (Claude Desktop, Cursor, VS Code, etc.) can connect to `http://127.0.0.1:8000/mcp` and call:
+
+- `search_attractions` — multi-hop RAG attraction retrieval
+- `get_weather` — weather forecast
+- `apply_budget` — budget guidance
+- `suggest_hotels` — hotel suggestions
+- `suggest_flights` — mock flight suggestions
+- `web_search` — fresh web search context
+
+Run the MCP server standalone:
+
+```bash
+python -m app.mcp_server
+```
+
+Debug with the MCP Inspector:
+
+```bash
+mcp dev app/mcp_server.py
 ```
 
 ## Tests
@@ -234,11 +290,13 @@ Mount the disk at:
 
 ```text
 app/
-  agent/       parser, planner, orchestrator, OpenRouter response generation
+  agent/       parser, planner, orchestrator, streaming, OpenRouter response generation
   data/        curated city and hotel/attraction data
   memory/      short-term memory, ChromaDB vector store, long-term memory
   static/      minimal HTML frontend
-  tools/       RAG, weather, budget, hotel, and web search tools
+  tools/       RAG, weather, budget, hotel, flight, web search tools + registry
+  mcp_server.py  MCP server exposing all tools at /mcp
 docs/          spec and implementation plan
 tests/         unit and API tests
+llms.txt       LLM-friendly project information
 ```

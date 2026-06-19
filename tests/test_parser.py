@@ -69,3 +69,32 @@ def test_parse_follow_up_cheaper():
     assert parsed.city is None
     assert parsed.is_follow_up is True
     assert parsed.follow_up_intent == "cheaper"
+
+
+def test_parse_flight_intent_with_origin():
+    parsed = parse_user_request("Plan a 2-day trip to Tokyo flying from London. Medium budget.")
+
+    assert parsed.city == "Tokyo"
+    assert parsed.asks_for_flights is True
+    assert parsed.origin_city == "London"
+
+
+def test_parse_flight_intent_without_origin():
+    parsed = parse_user_request("Plan a 2-day Tokyo trip with flights.")
+
+    assert parsed.city == "Tokyo"
+    assert parsed.asks_for_flights is True
+    assert parsed.origin_city is None
+
+
+def test_parse_no_flight_intent_when_word_absent():
+    parsed = parse_user_request("Plan a 2-day trip to Tokyo with food.")
+
+    assert parsed.asks_for_flights is False
+    assert parsed.origin_city is None
+
+
+def test_parse_origin_city_from_departing_phrase():
+    parsed = parse_user_request("Plan a Paris trip departing from Mumbai.")
+
+    assert parsed.origin_city == "Mumbai"
