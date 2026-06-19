@@ -153,3 +153,71 @@ def test_rag_auto_ingest_caches_so_second_call_skips_fetch(tmp_path):
     tool.run(city="Kyoto", interests=["food"], http_client=mock_client)
 
     assert fetch_count == first_fetch_count
+
+
+def test_rag_detects_and_replaces_stale_external_attractions(tmp_path):
+    """When hop_2 returns old-format external entries (text-chunk names),
+    the tool should detect them, delete them, and re-ingest with real
+    attraction names from Wikivoyage's See/Do sections."""
+    import httpx
+
+    from app.tools.external_content import clear_failed_cache
+
+    clear_failed_cache()
+    vector_store = VectorStore(path=str(tmp_path), embedder=FakeEmbedder())
+    tool = AttractionRagTool(vector_store=vector_store)
+    tool.seed()
+
+    # Manually insert stale external city docs (so hop_1 finds them)
+    # and stale external attractions with text-chunk names (so hop_2 finds them).
+    vector_store.add_documents(
+        "travel_city_docs",
+        documents=["Liverpool is a big city in Merseyside famed for music and culture."],
+        metadatas=[{"city": "Liverpool", "type": "city_overview", "source": "external_wikivoyage"}],
+        ids=["ext-wikivoyage-liverpool-0"],
+    )
+    vector_store.add_documents(
+        "travel_attractions",
+        documents=["Liverpool is a big city in Merseyside famed for music and culture."],
+        metadatas=[
+            {
+                "city": "Liverpool",
+                "type": "attraction",
+                "name": "Liverpool is a big city in Merseyside, England famed for its",
+                "source": "external_wikivoyage",
+                "categories": "",
+            }
+        ],
+        ids=["ext-wikivoyage-liverpool-0-attr"],
+    )
+
+    # Mock API that returns real attractions from the See section.
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "prop=sections" in url:
+            return httpx.Response(
+                200,
+                json={"parse": {"sections": [{"index": "17", "line": "See", "level": "2"}]}},
+            )
+        if "prop=wikitext" in url:
+            return httpx.Response(
+                200,
+                json={
+                    "parse": {
+                        "wikitext": {
+                            "*": "==See==\n* {{see\n| name=Museum of Liverpool\n| content=A large museum about Liverpool history.\n}}\n* {{see\n| name=Royal Liver Building\n| content=Iconic waterfront building.\n}}"
+                        }
+                    }
+                },
+            )
+        return httpx.Response(200, json={"query": {"pages": {"1": {"title": "Liverpool"}}}})
+
+    mock_client = httpx.Client(transport=httpx.MockTransport(handler))
+
+    result = tool.run(city="Liverpool", interests=["music"], http_client=mock_client)
+
+    assert result["status"] == "ok"
+    # The stale text-chunk name should be gone, replaced with real attraction names.
+    names = {item["name"] for item in result["results"]}
+    assert "Liverpool is a big city in Merseyside, England famed for its" not in names
+    assert any(name in names for name in {"Museum of Liverpool", "Royal Liver Building"})

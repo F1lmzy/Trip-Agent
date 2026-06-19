@@ -96,6 +96,17 @@ class AttractionRagTool:
             where={"city": normalized_city},
         )
 
+        # Detect stale external data (old format with text-chunk names) and re-ingest.
+        if hop_2_results and _has_stale_external_names(hop_2_results):
+            self._delete_stale_external_attractions(normalized_city)
+            self._ingest_external_attractions(normalized_city, http_client)
+            hop_2_results = self.vector_store.query(
+                ATTRACTIONS_COLLECTION,
+                query_text=hop_2_query,
+                n_results=limit,
+                where={"city": normalized_city},
+            )
+
         if not hop_2_results:
             return AttractionRagResult(
                 status="no_results",
@@ -174,6 +185,53 @@ class AttractionRagTool:
             )
         return True
 
+    def _ingest_external_attractions(
+        self,
+        city: str,
+        http_client: httpx.Client | None,
+    ) -> bool:
+        """Fetch and embed real attractions for a city without touching city docs.
+
+        Used when stale attraction data is detected but city docs are fine.
+        Returns True if attractions were ingested, False otherwise.
+        """
+        attractions = fetch_city_attractions(city, client=http_client)
+        if not attractions:
+            return False
+        self.vector_store.add_documents(
+            ATTRACTIONS_COLLECTION,
+            documents=[f"{a.name} in {a.city}. {a.description}" for a in attractions],
+            metadatas=[
+                {
+                    "city": a.city,
+                    "type": "attraction",
+                    "name": a.name,
+                    "source": f"external_{a.source}",
+                    "categories": "",
+                }
+                for a in attractions
+            ],
+            ids=[
+                f"ext-{a.source}-{a.city.lower().replace(' ', '-')}-{a.name.lower().replace(' ', '-')}"
+                for a in attractions
+            ],
+        )
+        return True
+
+    def _delete_stale_external_attractions(self, city: str) -> None:
+        """Delete external attraction entries for a city from ChromaDB.
+
+        Used to clear old-format entries (text-chunk names) before re-ingesting
+        with proper attraction names from Wikivoyage's See/Do sections.
+        """
+        collection = self.vector_store.get_or_create_collection(ATTRACTIONS_COLLECTION)
+        existing = collection.get(
+            where={"$and": [{"city": city}, {"source": "external_wikivoyage"}]}
+        )
+        ids = existing.get("ids") or []
+        if ids:
+            collection.delete(ids=ids)
+
     def _seed_city_docs(self) -> None:
         docs = load_city_documents()
         self.vector_store.add_documents(
@@ -243,3 +301,18 @@ def _summarize_results(results: list[VectorSearchResult]) -> list[dict[str, Any]
 
 def _normalize_city(city: str) -> str:
     return city.strip().replace("_", " ").title()
+
+
+def _has_stale_external_names(results: list[VectorSearchResult]) -> bool:
+    """Detect old-format external entries where 'name' is a text-chunk fragment.
+
+    Old format set name to doc.text[:60], producing sentence fragments like
+    'Liverpool is a big city in Merseyside...'. New format uses real names
+    from Wikivoyage's See/Do sections like 'Museum of Liverpool'.
+    """
+    for result in results:
+        source = result.metadata.get("source", "")
+        name = result.metadata.get("name", "")
+        if source.startswith("external_") and len(name) > 40:
+            return True
+    return False
