@@ -250,6 +250,42 @@ def test_openrouter_client_api_error_returns_fallback():
     assert result["content"] is None
 
 
+def test_openrouter_client_uses_configured_timeout(monkeypatch):
+    """The owned httpx client timeout should respect OPENROUTER_TIMEOUT_SECONDS."""
+    monkeypatch.setenv("OPENROUTER_TIMEOUT_SECONDS", "90")
+    get_settings.cache_clear()
+
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+
+    import httpx as _httpx
+
+    original_client_init = _httpx.Client.__init__
+
+    def spy_client_init(self, *args, **kwargs):
+        captured["timeout"] = kwargs.get("timeout")
+        # Inject a mock transport so no real network call is made.
+        kwargs["transport"] = httpx.MockTransport(handler)
+        original_client_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(_httpx.Client, "__init__", spy_client_init)
+
+    result = call_openrouter(
+        [{"role": "user", "content": "Plan Tokyo"}],
+        api_key="test-key",
+        model="nvidia/nemotron-3-ultra",
+    )
+
+    assert result["status"] == "ok"
+    timeout = captured.get("timeout")
+    assert isinstance(timeout, _httpx.Timeout)
+    assert timeout.read == 90.0
+
+    get_settings.cache_clear()
+
+
 def test_response_generator_falls_back_without_openrouter_key(monkeypatch):
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.setenv("OPENROUTER_TIMEOUT_SECONDS", "45")

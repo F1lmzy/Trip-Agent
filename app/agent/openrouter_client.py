@@ -39,7 +39,7 @@ def call_openrouter(
 
     try:
         if client is None:
-            timeout = httpx.Timeout(20.0, connect=10.0, write=10.0, pool=5.0)
+            timeout = httpx.Timeout(settings.openrouter_timeout_seconds, connect=10.0, write=10.0, pool=5.0)
             with httpx.Client(timeout=timeout) as owned_client:
                 response = owned_client.post(OPENROUTER_CHAT_URL, headers=headers, json=payload)
         else:
