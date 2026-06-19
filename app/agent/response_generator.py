@@ -146,7 +146,7 @@ def _itinerary_from_llm_content(parsed: ParsedRequest, content: str, tool_output
             "evening": _extract_time_slot(section, "evening") or fallback[f"day_{day}"]["evening"],
         }
 
-    return itinerary
+    return _enrich_itinerary(itinerary, tool_outputs)
 
 
 def _parse_markdown_table(content: str) -> list[dict[str, str]]:
@@ -276,7 +276,7 @@ def _fallback_itinerary(parsed: ParsedRequest, tool_outputs: dict[str, Any]) -> 
             "evening": f"Finish with {third} or a nearby dinner area that matches your budget.",
         }
 
-    return itinerary
+    return _enrich_itinerary(itinerary, tool_outputs)
 
 
 def _fallback_message(parsed: ParsedRequest, status: str) -> str:
@@ -417,3 +417,87 @@ def _flight_note(tool_outputs: dict[str, Any]) -> str | None:
         f"{flight.get('from_location')} to {flight.get('to_location')} from "
         f"${first.get('price')}."
     )
+
+
+def _enrich_itinerary(itinerary: dict[str, Any], tool_outputs: dict[str, Any]) -> dict[str, Any]:
+    """Attach structured places/hotels/flights sections to the itinerary.
+
+    Backward-compatible: only adds new keys, never removes or renames existing
+    ones. Each place and hotel entry carries an ``image_url`` (a Wikimedia
+    Commons URL or None) so the front-end can render images. Flights are
+    surfaced as structured cards (airline, price, duration, stops, booking
+    link) for the front-end flight section. All sections are best-effort and
+    default to empty lists when the corresponding tool did not run or returned
+    no usable results.
+    """
+    itinerary["places"] = _structured_places(tool_outputs)
+    itinerary["hotels"] = _structured_hotels(tool_outputs)
+    itinerary["flights"] = _structured_flights(tool_outputs)
+    return itinerary
+
+
+def _structured_places(tool_outputs: dict[str, Any]) -> list[dict[str, Any]]:
+    """Build a list of place cards with image_url from RAG attraction results."""
+    results = tool_outputs.get("attraction_rag_tool", {}).get("results", [])
+    places: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in results or []:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name")
+        if not name:
+            continue
+        # Skip externally-ingested chunks whose name is a raw text fragment.
+        description = item.get("description", "") or ""
+        if name in description[: len(name)] and len(name) > 40:
+            continue
+        key = str(name).strip().lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        places.append({
+            "name": str(name),
+            "image_url": item.get("image_url"),
+            "description": description,
+            "categories": item.get("categories"),
+        })
+    return places
+
+
+def _structured_hotels(tool_outputs: dict[str, Any]) -> list[dict[str, Any]]:
+    """Build a list of hotel cards with image_url from the hotel tool output."""
+    hotel = tool_outputs.get("hotel_tool", {})
+    if hotel.get("status") != "ok":
+        return []
+    hotels: list[dict[str, Any]] = []
+    for item in hotel.get("results", []) or []:
+        if not isinstance(item, dict) or not item.get("name"):
+            continue
+        hotels.append({
+            "name": item.get("name"),
+            "image_url": item.get("image_url"),
+            "hotel_class": item.get("hotel_class"),
+            "rating": item.get("rating"),
+            "price_usd_per_night": item.get("price_usd_per_night") or item.get("price"),
+            "booking_link": item.get("booking_link"),
+            "area": item.get("area"),
+            "budget_level": item.get("budget_level"),
+        })
+    return hotels
+
+
+def _structured_flights(tool_outputs: dict[str, Any]) -> dict[str, Any]:
+    """Build a structured flights section from the flight tool output."""
+    flight = tool_outputs.get("flight_tool", {})
+    if flight.get("status") != "ok":
+        return {"status": flight.get("status", "not_run"), "departure_flights": [], "return_flights": []}
+    results = flight.get("results", {}) or {}
+    return {
+        "status": "ok",
+        "from_location": flight.get("from_location"),
+        "to_location": flight.get("to_location"),
+        "departure_date": flight.get("departure_date"),
+        "return_date": flight.get("return_date"),
+        "departure_flights": results.get("departure_flights", []) or [],
+        "return_flights": results.get("return_flights", []) or [],
+    }

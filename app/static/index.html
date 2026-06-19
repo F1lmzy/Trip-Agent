@@ -165,6 +165,72 @@
       padding: 1rem;
     }
 
+    .media-grid {
+      display: grid;
+      gap: 0.75rem;
+      margin-top: 0.75rem;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    }
+
+    .place-card, .hotel-card {
+      border: 1px solid var(--border);
+      border-radius: 0.6rem;
+      overflow: hidden;
+      background: var(--surface);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .place-card img, .hotel-card img {
+      width: 100%;
+      height: 140px;
+      object-fit: cover;
+      display: block;
+      background: var(--surface-muted);
+    }
+
+    .place-card .body, .hotel-card .body {
+      padding: 0.6rem 0.75rem;
+    }
+
+    .place-card .body h4, .hotel-card .body h4 {
+      margin: 0 0 0.25rem;
+      font-size: 0.95rem;
+    }
+
+    .place-card .body p, .hotel-card .body p {
+      margin: 0;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+
+    .place-card .no-image, .hotel-card .no-image {
+      width: 100%;
+      height: 140px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--surface-muted);
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+
+    .flight-card {
+      border: 1px solid var(--border);
+      border-radius: 0.6rem;
+      padding: 0.75rem 1rem;
+      background: var(--surface);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 1.5rem;
+      align-items: center;
+      margin-top: 0.5rem;
+    }
+
+    .flight-card .route { font-weight: 700; }
+    .flight-card .meta { color: var(--muted); font-size: 0.9rem; }
+    .flight-card a { color: var(--accent); font-weight: 700; text-decoration: none; margin-left: auto; }
+
     .slot {
       margin-top: 0.75rem;
     }
@@ -387,6 +453,10 @@
       if (Array.isArray(itinerary.notes) && itinerary.notes.length) {
         section.appendChild(listElement(itinerary.notes, false, 'Notes'));
       }
+
+      section.appendChild(placesSection(itinerary.places || []));
+      section.appendChild(hotelsSection(itinerary.hotels || []));
+      section.appendChild(flightsSection(itinerary.flights || {}));
       return section;
     }
 
@@ -402,6 +472,166 @@
         div.innerHTML = `<strong>${slot}</strong><span>${escapeHtml(String(value))}</span>`;
         article.appendChild(div);
       });
+      return article;
+    }
+
+    function placesSection(places) {
+      const section = document.createElement('section');
+      section.className = 'card';
+      section.innerHTML = '<h3>Places to visit</h3>';
+      if (!Array.isArray(places) || places.length === 0) {
+        const p = document.createElement('p');
+        p.textContent = 'No place suggestions returned.';
+        section.appendChild(p);
+        return section;
+      }
+      const grid = document.createElement('div');
+      grid.className = 'media-grid';
+      places.forEach((place) => grid.appendChild(imageCard(place, 'place-card')));
+      section.appendChild(grid);
+      return section;
+    }
+
+    function hotelsSection(hotels) {
+      const section = document.createElement('section');
+      section.className = 'card';
+      section.innerHTML = '<h3>Hotel suggestions</h3>';
+      if (!Array.isArray(hotels) || hotels.length === 0) {
+        const p = document.createElement('p');
+        p.textContent = 'No hotel suggestions returned.';
+        section.appendChild(p);
+        return section;
+      }
+      const grid = document.createElement('div');
+      grid.className = 'media-grid';
+      hotels.forEach((hotel) => grid.appendChild(hotelCard(hotel)));
+      section.appendChild(grid);
+      return section;
+    }
+
+    function imageCard(item, className) {
+      const card = document.createElement('article');
+      card.className = className;
+      const media = document.createElement('div');
+      if (item.image_url) {
+        const img = document.createElement('img');
+        img.src = item.image_url;
+        img.alt = item.name || 'Place';
+        img.loading = 'lazy';
+        img.onerror = () => { img.replaceWith(noImagePlaceholder()); };
+        media.appendChild(img);
+      } else {
+        media.appendChild(noImagePlaceholder());
+      }
+      card.appendChild(media);
+      const body = document.createElement('div');
+      body.className = 'body';
+      body.innerHTML = `<h4>${escapeHtml(item.name || '')}</h4>`;
+      if (item.description) {
+        const p = document.createElement('p');
+        p.textContent = item.description;
+        body.appendChild(p);
+      }
+      card.appendChild(body);
+      return card;
+    }
+
+    function hotelCard(hotel) {
+      const card = document.createElement('article');
+      card.className = 'hotel-card';
+      const media = document.createElement('div');
+      if (hotel.image_url) {
+        const img = document.createElement('img');
+        img.src = hotel.image_url;
+        img.alt = hotel.name || 'Hotel';
+        img.loading = 'lazy';
+        img.onerror = () => { img.replaceWith(noImagePlaceholder()); };
+        media.appendChild(img);
+      } else {
+        media.appendChild(noImagePlaceholder());
+      }
+      card.appendChild(media);
+      const body = document.createElement('div');
+      body.className = 'body';
+      body.innerHTML = `<h4>${escapeHtml(hotel.name || '')}</h4>`;
+      const bits = [];
+      if (hotel.hotel_class) bits.push(`${hotel.hotel_class}* hotel`);
+      if (hotel.rating != null) bits.push(`★ ${hotel.rating}`);
+      if (hotel.price_usd_per_night != null) bits.push(`$${hotel.price_usd_per_night}/night`);
+      if (hotel.area) bits.push(escapeHtml(hotel.area));
+      if (bits.length) {
+        const p = document.createElement('p');
+        p.innerHTML = bits.join(' · ');
+        body.appendChild(p);
+      }
+      if (hotel.booking_link) {
+        const a = document.createElement('a');
+        a.href = hotel.booking_link;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.textContent = 'Book';
+        body.appendChild(a);
+      }
+      card.appendChild(body);
+      return card;
+    }
+
+    function noImagePlaceholder() {
+      const div = document.createElement('div');
+      div.className = 'no-image';
+      div.textContent = 'No image';
+      return div;
+    }
+
+    function airportLabel(airport) {
+      if (!airport) return '';
+      if (typeof airport === 'string') return airport;
+      if (typeof airport === 'object') {
+        const code = airport.code || airport.iata || '';
+        const name = airport.name || airport.city || '';
+        if (code && name) return `${name} (${code})`;
+        return code || name || '';
+      }
+      return String(airport);
+    }
+
+    function flightsSection(flights) {
+      const section = document.createElement('section');
+      section.className = 'card';
+      section.innerHTML = '<h3>Flights</h3>';
+      const departures = (flights && flights.departure_flights) || [];
+      const returns = (flights && flights.return_flights) || [];
+      if (flights && flights.status === 'ok' && (departures.length || returns.length)) {
+        departures.forEach((flight) => section.appendChild(flightCard(flight, 'Outbound')));
+        returns.forEach((flight) => section.appendChild(flightCard(flight, 'Return')));
+      } else {
+        const p = document.createElement('p');
+        p.textContent = 'No flight suggestions returned.';
+        section.appendChild(p);
+      }
+      return section;
+    }
+
+    function flightCard(flight, label) {
+      const article = document.createElement('article');
+      article.className = 'flight-card';
+      const fromLabel = airportLabel(flight.from_airport) || flight.from_location || '?';
+      const toLabel = airportLabel(flight.to_airport) || flight.to_location || '?';
+      const route = `${escapeHtml(fromLabel)} → ${escapeHtml(toLabel)}`;
+      const metaBits = [];
+      if (flight.airline) metaBits.push(`${escapeHtml(flight.airline)} ${escapeHtml(String(flight.flight_number || '')).trim()}`);
+      if (flight.price != null) metaBits.push(`$${flight.price}`);
+      if (flight.duration_minutes != null) metaBits.push(`${Math.round(flight.duration_minutes)} min`);
+      if (flight.is_direct != null) metaBits.push(flight.is_direct ? 'Direct' : `${flight.stops != null ? flight.stops : '1'} stop`);
+      article.innerHTML = `<span class="route"><strong>${label}:</strong> ${route}</span><span class="meta">${metaBits.join(' · ')}</span>`;
+      if (flight.booking_link) {
+        const a = document.createElement('a');
+        a.href = flight.booking_link;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.textContent = 'Book';
+        article.appendChild(a);
+      }
       return article;
     }
 

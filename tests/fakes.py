@@ -1,5 +1,22 @@
 import hashlib
 
+import httpx
+
+
+class FakeImageClient(httpx.Client):
+    """httpx client whose Commons image-search calls return an empty payload.
+
+    Used in test fixtures so orchestrator image attachment never hits the
+    live Wikimedia Commons API. ``resolve_place_image`` sees no pages and
+    returns None quickly, with zero network traffic.
+    """
+
+    def __init__(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"batchcomplete": "", "query": {"pages": []}})
+
+        super().__init__(transport=httpx.MockTransport(handler))
+
 
 class FakeSearchTool:
     def __init__(self, results: list[dict[str, str]] | None = None) -> None:

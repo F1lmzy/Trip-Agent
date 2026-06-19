@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     )
     openweather_api_key: str | None = Field(default=None, alias="OPENWEATHER_API_KEY")
     chroma_path: str = Field(default="./chroma_db", alias="CHROMA_PATH")
+    serpapi_api_key: str | None = Field(default=None, alias="SERPAPI_API_KEY")
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

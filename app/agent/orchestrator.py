@@ -15,8 +15,11 @@ from app.tools.attraction_rag_tool import AttractionRagTool, has_curated_rag_cit
 from app.tools.budget_tool import run_budget_tool
 from app.tools.flight_tool import run_flight_tool
 from app.tools.hotel_tool import run_hotel_tool
+from app.tools.serpapi_flight_tool import run_serpapi_flight_tool
+from app.tools.serpapi_hotel_tool import run_serpapi_hotel_tool
 from app.tools.weather_tool import run_weather_tool
 from app.tools.web_search_tool import run_web_search_tool
+from app.tools.wikimedia_image_tool import resolve_place_image
 
 
 @dataclass
@@ -28,6 +31,9 @@ class AgentServices:
     openweather_api_key: str | None = None
     openrouter_api_key: str | None = None
     openrouter_model: str | None = None
+    serpapi_api_key: str | None = None
+    serpapi_client: httpx.Client | None = None
+    image_client: httpx.Client | None = None
     use_environment: bool = True
     rag_seeded: bool = False
 
@@ -109,18 +115,96 @@ def _execute_tools(parsed: ParsedRequest, plan: PlanningResult, services: AgentS
         )
 
     if "hotel_tool" in selected_tools:
-        tool_outputs["hotel_tool"] = run_hotel_tool(parsed.city, parsed.budget)
+        tool_outputs["hotel_tool"] = _run_hotel(parsed, services)
 
     if "flight_tool" in selected_tools and parsed.origin_city:
-        tool_outputs["flight_tool"] = run_flight_tool(
-            from_location=parsed.origin_city,
-            to_location=parsed.city,
-            departure_date=_resolve_departure_date(parsed),
-            return_date=_resolve_return_date(parsed, parsed.duration_days),
-            budget=parsed.budget,
-        )
+        tool_outputs["flight_tool"] = _run_flight(parsed, services)
+
+    _attach_images(tool_outputs, services)
 
     return tool_outputs
+
+
+def _run_hotel(parsed: ParsedRequest, services: AgentServices) -> dict[str, Any]:
+    """Run the SerpAPI hotel tool, falling back to the mock tool.
+
+    SerpAPI is only called when a key is available (so the agent never breaks
+    and the SerpAPI request quota is only consumed on real, key-backed
+    requests). On any no_results/error, fall back to the mock tool so the
+    itinerary still has hotel content.
+    """
+    key = _service_value(services, "serpapi_api_key", "serpapi_api_key")
+    check_in = _resolve_departure_date(parsed)
+    check_out = _resolve_return_date(parsed, parsed.duration_days)
+    if key:
+        result = run_serpapi_hotel_tool(
+            city=parsed.city,
+            check_in_date=check_in,
+            check_out_date=check_out or check_in,
+            budget=parsed.budget,
+            api_key=key,
+            client=services.serpapi_client,
+        )
+        if result.get("status") == "ok":
+            return result
+    return run_hotel_tool(parsed.city, parsed.budget)
+
+
+def _run_flight(parsed: ParsedRequest, services: AgentServices) -> dict[str, Any]:
+    """Run the SerpAPI flight tool, falling back to the mock tool.
+
+    Same key-gating and fallback semantics as ``_run_hotel``.
+    """
+    key = _service_value(services, "serpapi_api_key", "serpapi_api_key")
+    departure_date = _resolve_departure_date(parsed)
+    # One-way requests skip the return date entirely; both flight tools treat
+    # return_date=None as a one-way search (no return_flights).
+    return_date = _resolve_return_date(parsed, parsed.duration_days) if parsed.trip_type != "one_way" else None
+    if key:
+        result = run_serpapi_flight_tool(
+            from_location=parsed.origin_city,
+            to_location=parsed.city,
+            departure_date=departure_date,
+            return_date=return_date,
+            budget=parsed.budget,
+            api_key=key,
+            client=services.serpapi_client,
+        )
+        if result.get("status") == "ok":
+            return result
+    return run_flight_tool(
+        from_location=parsed.origin_city,
+        to_location=parsed.city,
+        departure_date=departure_date,
+        return_date=return_date,
+        budget=parsed.budget,
+    )
+
+
+def _attach_images(tool_outputs: dict[str, Any], services: AgentServices) -> None:
+    """Attach Wikimedia Commons image_url to attraction and hotel results.
+
+    Best-effort and never blocking: a None image_url means "no image". Uses
+    the shared ``image_client`` when provided (testability), else a transient
+    client. Attraction results come from the RAG tool (a list under
+    ``results``); hotel results come from the hotel tool (``results`` list).
+    """
+    attraction = tool_outputs.get("attraction_rag_tool")
+    if isinstance(attraction, dict) and isinstance(attraction.get("results"), list):
+        for item in attraction["results"]:
+            if isinstance(item, dict) and "image_url" not in item:
+                name = item.get("name")
+                if name:
+                    item["image_url"] = resolve_place_image(name, client=services.image_client)
+
+    hotel = tool_outputs.get("hotel_tool")
+    if isinstance(hotel, dict) and isinstance(hotel.get("results"), list):
+        for item in hotel["results"]:
+            if isinstance(item, dict) and "image_url" not in item:
+                name = item.get("name")
+                if name:
+                    item["image_url"] = resolve_place_image(name, client=services.image_client)
+
 
 
 def _fresh_travel_search_intent(parsed: ParsedRequest) -> str:
@@ -129,9 +213,15 @@ def _fresh_travel_search_intent(parsed: ParsedRequest) -> str:
 
 
 def _resolve_departure_date(parsed: ParsedRequest) -> str:
-    """Resolve an ISO departure date from parsed dates or default to today."""
+    """Resolve an ISO departure date.
+
+    Priority: an explicit departure_date parsed from the message (e.g.
+    'from June 21 to June 25'), then the first date in parsed.dates, else today.
+    """
     from datetime import date, datetime
 
+    if parsed.departure_date:
+        return parsed.departure_date
     if parsed.dates:
         match = re.match(r"([A-Za-z]+\s+\d{1,2})", parsed.dates)
         if match:
@@ -144,9 +234,15 @@ def _resolve_departure_date(parsed: ParsedRequest) -> str:
 
 
 def _resolve_return_date(parsed: ParsedRequest, duration_days: int) -> str | None:
-    """Resolve an ISO return date based on departure date plus duration."""
+    """Resolve an ISO return date.
+
+    Priority: an explicit return_date parsed from the message, then departure
+    plus duration_days, else None.
+    """
     from datetime import date, datetime, timedelta
 
+    if parsed.return_date:
+        return parsed.return_date
     departure = _resolve_departure_date(parsed)
     try:
         departure_date = datetime.strptime(departure, "%Y-%m-%d").date()
