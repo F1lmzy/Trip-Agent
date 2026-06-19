@@ -107,6 +107,17 @@ class AttractionRagTool:
                 where={"city": normalized_city},
             )
 
+        # If hop_2 is still empty but hop_1 came from external sources, the
+        # attractions were never ingested (or were cleared). Try to fetch them.
+        if not hop_2_results and _hop_1_is_external(hop_1_results):
+            self._ingest_external_attractions(normalized_city, http_client)
+            hop_2_results = self.vector_store.query(
+                ATTRACTIONS_COLLECTION,
+                query_text=hop_2_query,
+                n_results=limit,
+                where={"city": normalized_city},
+            )
+
         if not hop_2_results:
             return AttractionRagResult(
                 status="no_results",
@@ -314,5 +325,14 @@ def _has_stale_external_names(results: list[VectorSearchResult]) -> bool:
         source = result.metadata.get("source", "")
         name = result.metadata.get("name", "")
         if source.startswith("external_") and len(name) > 40:
+            return True
+    return False
+
+
+def _hop_1_is_external(results: list[VectorSearchResult]) -> bool:
+    """Check if hop_1 results came from external ingestion (not curated data)."""
+    for result in results:
+        source = result.metadata.get("source", "")
+        if source.startswith("external_"):
             return True
     return False

@@ -221,3 +221,54 @@ def test_rag_detects_and_replaces_stale_external_attractions(tmp_path):
     names = {item["name"] for item in result["results"]}
     assert "Liverpool is a big city in Merseyside, England famed for its" not in names
     assert any(name in names for name in {"Museum of Liverpool", "Royal Liver Building"})
+
+
+def test_rag_ingests_attractions_when_hop2_empty_but_hop1_external(tmp_path):
+    """When hop_1 finds external city docs but hop_2 is empty (attractions
+    were never ingested or were cleared), the tool should fetch attractions
+    from Wikivoyage's See/Do sections and retry hop_2."""
+    import httpx
+
+    from app.tools.external_content import clear_failed_cache
+
+    clear_failed_cache()
+    vector_store = VectorStore(path=str(tmp_path), embedder=FakeEmbedder())
+    tool = AttractionRagTool(vector_store=vector_store)
+    tool.seed()
+
+    # Insert ONLY external city docs (no attractions at all).
+    vector_store.add_documents(
+        "travel_city_docs",
+        documents=["Liverpool is a big city in Merseyside famed for music and culture."],
+        metadatas=[{"city": "Liverpool", "type": "city_overview", "source": "external_wikivoyage"}],
+        ids=["ext-wikivoyage-liverpool-0"],
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "prop=sections" in url:
+            return httpx.Response(
+                200,
+                json={"parse": {"sections": [{"index": "17", "line": "See", "level": "2"}]}},
+            )
+        if "prop=wikitext" in url:
+            return httpx.Response(
+                200,
+                json={
+                    "parse": {
+                        "wikitext": {
+                            "*": "==See==\n* {{see\n| name=Museum of Liverpool\n| content=A large museum about Liverpool history.\n}}\n* {{see\n| name=Royal Liver Building\n| content=Iconic waterfront building.\n}}"
+                        }
+                    }
+                },
+            )
+        return httpx.Response(200, json={"query": {"pages": {"1": {"title": "Liverpool"}}}})
+
+    mock_client = httpx.Client(transport=httpx.MockTransport(handler))
+
+    result = tool.run(city="Liverpool", interests=["music"], http_client=mock_client)
+
+    assert result["status"] == "ok"
+    assert result["rag_trace"]["hop_2"]
+    names = {item["name"] for item in result["results"]}
+    assert "Museum of Liverpool" in names or "Royal Liver Building" in names
