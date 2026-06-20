@@ -277,18 +277,231 @@ def test_destination_agent_returns_suggestions_via_handle_chat(tmp_path):
     assert response.tools_used == ["destination_rag"]
 
 
-def test_destination_agent_seeds_city_docs_lazily(tmp_path):
-    # A fresh, empty store must still yield suggestions because the agent seeds
-    # curated city overviews from app/data/city_docs/*.md (local files, no net).
+def test_destination_agent_uses_broader_catalog_not_only_five_curated_cities(tmp_path):
     services = _make_services(tmp_path)
     ctx = _ctx(
-        "I like museums and food, medium budget, 2 days",
+        "I want beaches, nature, wellness and a relaxed trip, medium budget",
         services=services,
     )
 
     response = DestinationRecommendationAgent().run(ctx)
 
-    assert response.itinerary["suggested_cities"], "lazy seed should populate city docs"
+    cities = [s["city"] for s in response.itinerary["suggested_cities"]]
+    assert cities[0] == "Bali", cities
+    assert any(city in cities for city in ["Barcelona", "Lisbon", "Dubai"]), cities
+    # Regression: before the catalog, the agent could only return these five.
+    assert set(cities) != {"Tokyo", "Paris", "Singapore", "New York", "Mumbai"}
+
+
+def test_destination_agent_understands_regional_theme_asian_history(tmp_path):
+    search = FakeSearchTool(
+        results=[
+            {
+                "title": "Best Asian history destinations: Siem Reap, Beijing and Xi'an",
+                "link": "https://example.com/asian-history",
+                "snippet": "Siem Reap is useful for Angkor temples, Beijing for imperial history, and Xi'an for the Terracotta Army.",
+            },
+            {
+                "title": "Historic Asia city breaks",
+                "link": "https://example.com/asia-cities",
+                "snippet": "Hanoi, Kyoto and Ayutthaya are popular choices for travelers interested in Asian history.",
+            },
+        ]
+    )
+    services = _make_services(tmp_path)
+    services.web_search_tool = search
+    ctx = _ctx("Plan a 2-day trip, I like asian history", services=services)
+
+    response = DestinationRecommendationAgent().run(ctx)
+
+    cities = [s["city"] for s in response.itinerary["suggested_cities"]]
+    assert cities, "expected Asian history suggestions"
+    assert all(city not in cities for city in ["Paris", "Barcelona", "Rome"]), cities
+    # These are discovered from web snippets, not hardcoded in the local catalog.
+    assert any(city in cities for city in ["Siem Reap", "Beijing", "Xi'an", "Hanoi", "Ayutthaya"]), cities
+    assert any(s.get("source") == "web" for s in response.itinerary["suggested_cities"])
+    assert search.queries, "history theme should use the web booster"
+    assert "asian" in search.queries[0]
+    assert "history" in search.queries[0]
+
+
+def test_destination_agent_rejects_generic_title_case_web_phrases(tmp_path):
+    search = FakeSearchTool(
+        results=[
+            {
+                "title": "Amazing Historic Holidays Where History and Modernity Collide - Touripia",
+                "link": "https://example.com/noisy",
+                "snippet": "Every location offers iconic landmarks and unique attractions steeped in history. Perfect for history buffs or anyone looking for the best historic holidays.",
+            },
+            {
+                "title": "The History of Ottoman Empire: A Global Power",
+                "link": "https://example.com/ottoman",
+                "snippet": "Travel Guides and Tips. Wildlife Safaris: The Best Destinations for Animal Encounters.",
+            },
+            {
+                "title": "United Kingdom historic cities",
+                "link": "https://example.com/uk",
+                "snippet": "The United Kingdom is home to an incredible array of cities, each with its unique blend of history and modernity. From the capital city of London to the old streets of York.",
+            },
+        ]
+    )
+    services = _make_services(tmp_path)
+    services.web_search_tool = search
+    ctx = _ctx("Plan a 2-day trip, I like western history", services=services)
+
+    response = DestinationRecommendationAgent().run(ctx)
+
+    cities = [s["city"] for s in response.itinerary["suggested_cities"]]
+    assert not any(
+        city in cities for city in ["Amazing", "Modernity Collide", "Touripia", "Ottoman Empire", "Global Power", "Animal Encounters"]
+    ), cities
+    assert any(city in cities for city in ["London", "Rome", "Paris", "Barcelona", "Prague"]), cities
+
+
+def test_destination_agent_rejects_country_region_and_site_names_from_web_results(tmp_path):
+    search = FakeSearchTool(
+        results=[
+            {
+                "title": "Which Asian destination should I pick? - Mumsnet",
+                "link": "https://example.com/forum",
+                "snippet": "23 Sept 2025 · Vietnam has some treasures as well as Cambodia. Taiwan was fabulous. South Korea has many gems as well as Japan. Sri Lanka is on my list for SE Asia.",
+            },
+            {
+                "title": "Best Southeast Asian history trips",
+                "link": "https://example.com/asia",
+                "snippet": "Southeast Asian routes often include countries rather than cities in short forum answers.",
+            },
+        ]
+    )
+    services = _make_services(tmp_path)
+    services.web_search_tool = search
+    ctx = _ctx("Plan a 2-day trip, I like asian history", services=services)
+
+    response = DestinationRecommendationAgent().run(ctx)
+
+    cities = [s["city"] for s in response.itinerary["suggested_cities"]]
+    assert not any(
+        city in cities for city in ["Sri Lanka", "Southeast Asian", "SE Asia", "Mumsnet", "Which Asian", "Vietnam", "Cambodia", "Taiwan", "South Korea", "Japan"]
+    ), cities
+    assert any(city in cities for city in ["Kyoto", "Seoul", "Tokyo", "Mumbai", "Bangkok"]), cities
+
+
+def test_destination_agent_rejects_dates_and_sentence_words_from_web_results(tmp_path):
+    search = FakeSearchTool(
+        results=[
+            {
+                "title": "Athens Comes to Life for Western History",
+                "link": "https://example.com/bad-history",
+                "snippet": "March 9, 2026 - Egyptian pharaohs believed that once they passed away, they’d become Gods in the afterlife, so they built massive temples and grand pyramids.",
+            }
+        ]
+    )
+    services = _make_services(tmp_path)
+    services.web_search_tool = search
+    ctx = _ctx("Plan a 2-day trip, I like western history", services=services)
+
+    response = DestinationRecommendationAgent().run(ctx)
+
+    cities = [s["city"] for s in response.itinerary["suggested_cities"]]
+    assert not any(city in cities for city in ["March", "Comes", "Life", "Egyptian", "Gods", "Athens Comes"]), cities
+    # The agent should fall back to clean catalog-backed Western-history cities
+    # instead of emitting garbage web phrases.
+    assert any(city in cities for city in ["Rome", "Paris", "Barcelona", "London", "Prague"]), cities
+
+
+def test_destination_agent_rejects_generic_web_phrases_for_western_history(tmp_path):
+    search = FakeSearchTool(
+        results=[
+            {
+                "title": "History Buffs and The Best Travel Destinations For History",
+                "link": "https://example.com/bad",
+                "snippet": "Model Desac says the best travel destinations for history buffs provide an immersive experience.",
+            },
+            {
+                "title": "Western history city breaks: Rome, Prague and London",
+                "link": "https://example.com/western-history",
+                "snippet": "Rome, Prague and London are useful bases for Western history, museums and architecture.",
+            },
+        ]
+    )
+    services = _make_services(tmp_path)
+    services.web_search_tool = search
+    ctx = _ctx("Plan a 2-day trip, I like western history", services=services)
+
+    response = DestinationRecommendationAgent().run(ctx)
+
+    cities = [s["city"] for s in response.itinerary["suggested_cities"]]
+    assert not any(city in cities for city in ["History Buffs", "Model Desac", "The", "The Best Travel", "Destinations For History"]), cities
+    assert any(city in cities for city in ["Rome", "Prague", "London"]), cities
+    assert response.message.startswith("Based on what you're looking for")
+
+
+def test_destination_agent_web_boost_uses_search_results_for_recommendation_prompts(tmp_path):
+    search = FakeSearchTool(
+        results=[
+            {
+                "title": "Best affordable food destinations: Lisbon and Naples",
+                "link": "https://example.com/food",
+                "snippet": "Lisbon and Naples are often recommended for food, budget hotels, and coastal city breaks.",
+            },
+            {
+                "title": "Why Prague is good for nightlife and architecture",
+                "link": "https://example.com/prague",
+                "snippet": "Prague is a cheap destination for beer, history, nightlife, and architecture.",
+            },
+        ]
+    )
+    services = _make_services(tmp_path)
+    services.web_search_tool = search
+    ctx = _ctx("Recommend the best cheap food destinations with nightlife", services=services)
+
+    response = DestinationRecommendationAgent().run(ctx)
+
+    assert search.queries, "expected the web search booster to run"
+    cities = [s["city"] for s in response.itinerary["suggested_cities"]]
+    assert cities[0] in {"Lisbon", "Naples", "Prague"}, cities
+    assert any(s["source"] == "catalog+web" for s in response.itinerary["suggested_cities"])
+    assert any("Recent web results" in s["rationale"] for s in response.itinerary["suggested_cities"])
+
+
+def test_destination_agent_web_searches_for_plain_theme_prompt(tmp_path):
+    search = FakeSearchTool()
+    services = _make_services(tmp_path)
+    services.web_search_tool = search
+    ctx = _ctx("anime, gaming, food and photography, medium budget", services=services)
+
+    DestinationRecommendationAgent().run(ctx)
+
+    assert search.queries, "theme prompts should use the web booster"
+    assert "anime" in search.queries[0]
+    assert "photography" in search.queries[0]
+
+
+def test_destination_agent_web_searches_for_unparsed_theme_terms(tmp_path):
+    search = FakeSearchTool()
+    services = _make_services(tmp_path)
+    services.web_search_tool = search
+    ctx = _ctx("wellness, beer and cycling destinations", services=services)
+
+    DestinationRecommendationAgent().run(ctx)
+
+    assert search.queries, "raw theme terms should also trigger the web booster"
+
+
+def test_destination_agent_varies_results_by_interest(tmp_path):
+    services = _make_services(tmp_path)
+    anime = DestinationRecommendationAgent().run(
+        _ctx("anime, gaming, food and photography, medium budget", services=services)
+    )
+    beaches = DestinationRecommendationAgent().run(
+        _ctx("beaches, wellness, nature and relaxed cafes, medium budget", services=services)
+    )
+
+    anime_cities = [s["city"] for s in anime.itinerary["suggested_cities"]]
+    beach_cities = [s["city"] for s in beaches.itinerary["suggested_cities"]]
+    assert anime_cities != beach_cities
+    assert anime_cities[0] in {"Tokyo", "Seoul"}
+    assert beach_cities[0] == "Bali"
 
 
 def test_destination_agent_with_no_interests_still_suggests(tmp_path):

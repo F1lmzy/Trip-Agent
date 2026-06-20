@@ -1,0 +1,492 @@
+[
+  {
+    "city": "Tokyo",
+    "country": "Japan",
+    "tags": [
+      "anime",
+      "food",
+      "photography",
+      "shopping",
+      "culture",
+      "museums",
+      "nightlife",
+      "technology",
+      "gaming"
+    ],
+    "budget_levels": [
+      "medium",
+      "luxury"
+    ],
+    "travel_styles": [
+      "urban",
+      "culture",
+      "foodie"
+    ],
+    "rationale": "Tokyo is ideal for anime, gaming, food streets, photography, temples, museums, and dense neighborhood exploration."
+  },
+  {
+    "city": "Kyoto",
+    "country": "Japan",
+    "tags": [
+      "culture",
+      "history",
+      "temples",
+      "nature",
+      "photography",
+      "food",
+      "gardens",
+      "architecture"
+    ],
+    "budget_levels": [
+      "low",
+      "medium",
+      "luxury"
+    ],
+    "travel_styles": [
+      "culture",
+      "relaxed",
+      "romantic"
+    ],
+    "rationale": "Kyoto fits travelers who want temples, gardens, traditional streets, seasonal photography, tea culture, and slower historic neighborhoods."
+  },
+  {
+    "city": "Seoul",
+    "country": "South Korea",
+    "tags": [
+      "food",
+      "shopping",
+      "nightlife",
+      "culture",
+      "history",
+      "photography",
+      "technology",
+      "music"
+    ],
+    "budget_levels": [
+      "low",
+      "medium",
+      "luxury"
+    ],
+    "travel_styles": [
+      "urban",
+      "foodie",
+      "culture"
+    ],
+    "rationale": "Seoul combines street food, markets, palaces, K-culture, nightlife districts, shopping streets, and mountain viewpoints."
+  },
+  {
+    "city": "Singapore",
+    "country": "Singapore",
+    "tags": [
+      "food",
+      "nature",
+      "architecture",
+      "museums",
+      "family",
+      "photography",
+      "shopping",
+      "culture"
+    ],
+    "budget_levels": [
+      "medium",
+      "luxury"
+    ],
+    "travel_styles": [
+      "urban",
+      "family",
+      "foodie"
+    ],
+    "rationale": "Singapore is compact and efficient, with hawker food, gardens, waterfront architecture, museums, family activities, and strong transit."
+  },
+  {
+    "city": "Bangkok",
+    "country": "Thailand",
+    "tags": [
+      "food",
+      "nightlife",
+      "culture",
+      "temples",
+      "shopping",
+      "markets",
+      "photography",
+      "budget"
+    ],
+    "budget_levels": [
+      "low",
+      "medium",
+      "luxury"
+    ],
+    "travel_styles": [
+      "foodie",
+      "urban",
+      "nightlife"
+    ],
+    "rationale": "Bangkok is strong for street food, night markets, temples, rooftop bars, shopping, river neighborhoods, and budget-friendly stays."
+  },
+  {
+    "city": "Bali",
+    "country": "Indonesia",
+    "tags": [
+      "beaches",
+      "nature",
+      "relaxed",
+      "photography",
+      "wellness",
+      "food",
+      "culture",
+      "romantic"
+    ],
+    "budget_levels": [
+      "low",
+      "medium",
+      "luxury"
+    ],
+    "travel_styles": [
+      "relaxed",
+      "romantic",
+      "nature"
+    ],
+    "rationale": "Bali fits beach, nature, wellness, photography, rice terraces, temples, surf towns, and relaxed resort or villa trips."
+  },
+  {
+    "city": "Dubai",
+    "country": "United Arab Emirates",
+    "tags": [
+      "luxury",
+      "shopping",
+      "architecture",
+      "beaches",
+      "family",
+      "nightlife",
+      "photography",
+      "desert"
+    ],
+    "budget_levels": [
+      "medium",
+      "luxury"
+    ],
+    "travel_styles": [
+      "luxury",
+      "family",
+      "urban"
+    ],
+    "rationale": "Dubai suits luxury hotels, architecture, shopping, beaches, desert activities, family attractions, and polished nightlife."
+  },
+  {
+    "city": "Paris",
+    "country": "France",
+    "tags": [
+      "art",
+      "museums",
+      "food",
+      "history",
+      "architecture",
+      "romantic",
+      "photography",
+      "shopping"
+    ],
+    "budget_levels": [
+      "medium",
+      "luxury"
+    ],
+    "travel_styles": [
+      "romantic",
+      "culture",
+      "foodie"
+    ],
+    "rationale": "Paris is best for art, museums, food, architecture, romantic walks, historic neighborhoods, gardens, and iconic photography."
+  },
+  {
+    "city": "Barcelona",
+    "country": "Spain",
+    "tags": [
+      "beaches",
+      "architecture",
+      "food",
+      "nightlife",
+      "art",
+      "photography",
+      "history",
+      "shopping"
+    ],
+    "budget_levels": [
+      "low",
+      "medium",
+      "luxury"
+    ],
+    "travel_styles": [
+      "urban",
+      "beach",
+      "culture"
+    ],
+    "rationale": "Barcelona blends beaches, Gaudí architecture, tapas, nightlife, markets, museums, and walkable Mediterranean neighborhoods."
+  },
+  {
+    "city": "Rome",
+    "country": "Italy",
+    "tags": [
+      "history",
+      "culture",
+      "food",
+      "architecture",
+      "museums",
+      "photography",
+      "romantic",
+      "walking"
+    ],
+    "budget_levels": [
+      "low",
+      "medium",
+      "luxury"
+    ],
+    "travel_styles": [
+      "culture",
+      "foodie",
+      "romantic"
+    ],
+    "rationale": "Rome is excellent for ancient history, churches, piazzas, Italian food, museums, architecture, and long scenic walks."
+  },
+  {
+    "city": "Milan",
+    "country": "Italy",
+    "tags": [
+      "fashion",
+      "shopping",
+      "food",
+      "architecture",
+      "art",
+      "nightlife",
+      "luxury",
+      "museums"
+    ],
+    "budget_levels": [
+      "medium",
+      "luxury"
+    ],
+    "travel_styles": [
+      "urban",
+      "luxury",
+      "culture"
+    ],
+    "rationale": "Milan fits fashion, design, shopping, aperitivo culture, architecture, art museums, and polished city breaks."
+  },
+  {
+    "city": "Naples",
+    "country": "Italy",
+    "tags": [
+      "food",
+      "history",
+      "culture",
+      "budget",
+      "photography",
+      "architecture",
+      "coast",
+      "museums"
+    ],
+    "budget_levels": [
+      "low",
+      "medium"
+    ],
+    "travel_styles": [
+      "foodie",
+      "culture",
+      "urban"
+    ],
+    "rationale": "Naples is a strong match for pizza, historic streets, archaeology, local culture, coastal day trips, and good-value food travel."
+  },
+  {
+    "city": "Glasgow",
+    "country": "United Kingdom",
+    "tags": [
+      "food",
+      "music",
+      "nightlife",
+      "museums",
+      "architecture",
+      "culture",
+      "shopping",
+      "budget"
+    ],
+    "budget_levels": [
+      "low",
+      "medium"
+    ],
+    "travel_styles": [
+      "urban",
+      "culture",
+      "nightlife"
+    ],
+    "rationale": "Glasgow works well for food, live music, nightlife, museums, Victorian architecture, friendly neighborhoods, and value-focused city trips."
+  },
+  {
+    "city": "London",
+    "country": "United Kingdom",
+    "tags": [
+      "museums",
+      "history",
+      "food",
+      "theater",
+      "shopping",
+      "nightlife",
+      "family",
+      "architecture"
+    ],
+    "budget_levels": [
+      "medium",
+      "luxury"
+    ],
+    "travel_styles": [
+      "urban",
+      "culture",
+      "family"
+    ],
+    "rationale": "London offers museums, theater, historic landmarks, markets, food halls, shopping, nightlife, and easy day-trip options."
+  },
+  {
+    "city": "Reykjavik",
+    "country": "Iceland",
+    "tags": [
+      "nature",
+      "photography",
+      "adventure",
+      "northern lights",
+      "wellness",
+      "road trip",
+      "waterfalls",
+      "luxury"
+    ],
+    "budget_levels": [
+      "medium",
+      "luxury"
+    ],
+    "travel_styles": [
+      "nature",
+      "adventure",
+      "romantic"
+    ],
+    "rationale": "Reykjavik is best for nature, northern lights, waterfalls, lagoons, road trips, dramatic landscapes, and photography."
+  },
+  {
+    "city": "New York",
+    "country": "United States",
+    "tags": [
+      "museums",
+      "food",
+      "nightlife",
+      "theater",
+      "shopping",
+      "photography",
+      "architecture",
+      "family"
+    ],
+    "budget_levels": [
+      "medium",
+      "luxury"
+    ],
+    "travel_styles": [
+      "urban",
+      "culture",
+      "nightlife"
+    ],
+    "rationale": "New York is strong for museums, food halls, skyline views, theater, nightlife, shopping, parks, and iconic urban photography."
+  },
+  {
+    "city": "Mumbai",
+    "country": "India",
+    "tags": [
+      "food",
+      "culture",
+      "history",
+      "nightlife",
+      "shopping",
+      "photography",
+      "markets",
+      "budget"
+    ],
+    "budget_levels": [
+      "low",
+      "medium",
+      "luxury"
+    ],
+    "travel_styles": [
+      "urban",
+      "foodie",
+      "culture"
+    ],
+    "rationale": "Mumbai is great for street food, markets, colonial history, coastal viewpoints, nightlife, Bollywood culture, and energetic neighborhoods."
+  },
+  {
+    "city": "Lisbon",
+    "country": "Portugal",
+    "tags": [
+      "food",
+      "history",
+      "architecture",
+      "photography",
+      "beaches",
+      "nightlife",
+      "budget",
+      "romantic"
+    ],
+    "budget_levels": [
+      "low",
+      "medium",
+      "luxury"
+    ],
+    "travel_styles": [
+      "romantic",
+      "foodie",
+      "urban"
+    ],
+    "rationale": "Lisbon is a good-value pick for food, tiled streets, viewpoints, coastal day trips, nightlife, trams, and warm photography."
+  },
+  {
+    "city": "Amsterdam",
+    "country": "Netherlands",
+    "tags": [
+      "museums",
+      "art",
+      "cycling",
+      "history",
+      "nightlife",
+      "food",
+      "photography",
+      "architecture"
+    ],
+    "budget_levels": [
+      "medium",
+      "luxury"
+    ],
+    "travel_styles": [
+      "culture",
+      "urban",
+      "relaxed"
+    ],
+    "rationale": "Amsterdam works for museums, canals, cycling, architecture, relaxed neighborhoods, food markets, nightlife, and easy walking routes."
+  },
+  {
+    "city": "Prague",
+    "country": "Czech Republic",
+    "tags": [
+      "history",
+      "architecture",
+      "beer",
+      "nightlife",
+      "budget",
+      "photography",
+      "romantic",
+      "culture"
+    ],
+    "budget_levels": [
+      "low",
+      "medium",
+      "luxury"
+    ],
+    "travel_styles": [
+      "culture",
+      "romantic",
+      "budget"
+    ],
+    "rationale": "Prague is strong for architecture, history, beer halls, bridges, viewpoints, nightlife, and budget-friendly romantic city breaks."
+  }
+]

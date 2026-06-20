@@ -16,3 +16,5 @@ services:
         sync: false
       - key: OPENWEATHER_API_KEY
         sync: false
+      - key: SERPAPI_API_KEY
+        sync: false

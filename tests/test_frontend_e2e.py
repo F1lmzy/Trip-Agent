@@ -68,7 +68,9 @@ def test_index_html_contains_image_hotel_and_flight_renderers():
     assert "function hotelCard" in html
     assert "function flightCard" in html
     assert "function airportLabel" in html
+    assert "function weatherSection" in html
     # Section headings rendered by the JS.
+    assert "Weather forecast" in html
     assert "Places to visit" in html
     assert "Hotel suggestions" in html
     assert "Flights" in html

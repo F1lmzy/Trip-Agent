@@ -89,6 +89,7 @@ def build_itinerary_messages(
         "You are a travel planning assistant. Generate a personalized itinerary using only the provided context. "
         "Return a concise response with a structured itinerary organized by day, morning, afternoon, and evening. "
         "Use weather, budget, RAG attraction context, memory, and web search context when available. "
+        "When using weather, copy the provided forecast dates, summaries, temperatures, and suitability exactly; do not invent weather details. "
         "Mention hotel suggestions only when hotel output is present. "
         "If context is missing, make safe general recommendations and state assumptions briefly."
     )
@@ -385,12 +386,44 @@ def _weather_note(tool_outputs: dict[str, Any]) -> str | None:
     forecast = weather.get("forecast", [])
     if not forecast:
         return None
-    first_day = forecast[0]
-    summary = first_day.get("summary")
-    suitability = first_day.get("outdoor_suitability")
     if weather.get("source") == "fallback":
+        first_day = forecast[0]
+        summary = first_day.get("summary")
+        suitability = first_day.get("outdoor_suitability")
         return f"Weather note: {summary} Outdoor suitability is {suitability}."
-    return f"Weather note: {summary} with outdoor suitability marked {suitability}."
+
+    day_summaries = [_weather_day_text(day) for day in forecast[:3]]
+    day_summaries = [text for text in day_summaries if text]
+    if not day_summaries:
+        return None
+    return "Weather note: " + "; ".join(day_summaries) + "."
+
+
+def _weather_day_text(day: dict[str, Any]) -> str:
+    date = day.get("date")
+    summary = day.get("summary")
+    suitability = day.get("outdoor_suitability")
+    temp = day.get("temperature_c")
+    feels_like = day.get("feels_like_c")
+    if temp is None:
+        temp = day.get("temperature_f")
+        feels_like = day.get("feels_like_f")
+        unit = "°F"
+    else:
+        unit = "°C"
+
+    parts = []
+    if date:
+        parts.append(str(date))
+    if summary:
+        parts.append(str(summary))
+    if temp is not None:
+        parts.append(f"{temp}{unit}")
+    if feels_like is not None:
+        parts.append(f"feels like {feels_like}{unit}")
+    if suitability:
+        parts.append(f"outdoor suitability {suitability}")
+    return ", ".join(parts)
 
 
 def _budget_note(tool_outputs: dict[str, Any]) -> str | None:
@@ -433,7 +466,34 @@ def _enrich_itinerary(itinerary: dict[str, Any], tool_outputs: dict[str, Any]) -
     itinerary["places"] = _structured_places(tool_outputs)
     itinerary["hotels"] = _structured_hotels(tool_outputs)
     itinerary["flights"] = _structured_flights(tool_outputs)
+    itinerary["weather"] = _structured_weather(tool_outputs)
     return itinerary
+
+
+def _structured_weather(tool_outputs: dict[str, Any]) -> dict[str, Any]:
+    weather = tool_outputs.get("weather_tool", {})
+    forecast = weather.get("forecast") or []
+    if not weather:
+        return {"status": "not_run", "forecast": []}
+    return {
+        "status": weather.get("status"),
+        "city": weather.get("city"),
+        "source": weather.get("source"),
+        "forecast": [
+            {
+                "date": day.get("date"),
+                "summary": day.get("summary"),
+                "temperature_c": day.get("temperature_c"),
+                "feels_like_c": day.get("feels_like_c"),
+                "temperature_f": day.get("temperature_f"),
+                "feels_like_f": day.get("feels_like_f"),
+                "humidity": day.get("humidity"),
+                "wind_speed": day.get("wind_speed"),
+                "outdoor_suitability": day.get("outdoor_suitability"),
+            }
+            for day in forecast
+        ],
+    }
 
 
 def _structured_places(tool_outputs: dict[str, Any]) -> list[dict[str, Any]]:

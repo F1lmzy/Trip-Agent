@@ -617,6 +617,7 @@
       }
 
       section.appendChild(suggestionsSection(itinerary));
+      section.appendChild(weatherSection(itinerary.weather || {}));
       section.appendChild(placesSection(itinerary.places || []));
       section.appendChild(hotelsSection(itinerary.hotels || []));
       section.appendChild(flightsSection(itinerary.flights || {}));
@@ -642,6 +643,29 @@
           messageInput.value = `Plan a trip to ${s.city}.`;
           messageInput.focus();
         });
+        grid.appendChild(card);
+      });
+      wrap.appendChild(grid);
+      return wrap;
+    }
+
+    function weatherSection(weather) {
+      const forecast = Array.isArray(weather.forecast) ? weather.forecast : [];
+      if (!forecast.length) return document.createElement('span');
+      const wrap = document.createElement('div');
+      wrap.innerHTML = '<h4>Weather forecast</h4>';
+      const grid = document.createElement('div');
+      grid.className = 'media-grid';
+      forecast.forEach((day) => {
+        const card = document.createElement('article');
+        card.className = 'day-card';
+        const temp = day.temperature_c != null ? `${day.temperature_c}°C` : (day.temperature_f != null ? `${day.temperature_f}°F` : 'Temperature unavailable');
+        const feels = day.feels_like_c != null ? `Feels like ${day.feels_like_c}°C` : (day.feels_like_f != null ? `Feels like ${day.feels_like_f}°F` : '');
+        card.innerHTML =
+          `<h4>${escapeHtml(day.date || 'Forecast')}</h4>` +
+          `<p><strong>${escapeHtml(day.summary || 'Unknown')}</strong> · ${escapeHtml(temp)}</p>` +
+          (feels ? `<p>${escapeHtml(feels)}</p>` : '') +
+          `<p>Outdoor suitability: ${escapeHtml(day.outdoor_suitability || 'unknown')}</p>`;
         grid.appendChild(card);
       });
       wrap.appendChild(grid);

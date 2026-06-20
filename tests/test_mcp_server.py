@@ -65,7 +65,8 @@ def test_mcp_suggest_flights_tool_returns_flight_suggestions():
 
 
 def test_mcp_get_weather_tool_returns_fallback_without_api_key(monkeypatch):
-    monkeypatch.delenv("OPENWEATHER_API_KEY", raising=False)
+    # Force an empty key even when a developer's local .env contains one.
+    monkeypatch.setenv("OPENWEATHER_API_KEY", "")
     from app.config import get_settings
 
     get_settings.cache_clear()

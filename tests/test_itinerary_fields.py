@@ -60,6 +60,16 @@ def _tool_outputs_with_images() -> dict:
                 "return_flights": [],
             },
         },
+        "weather_tool": {
+            "tool_name": "weather_tool",
+            "status": "ok",
+            "city": "Tokyo",
+            "source": "openweathermap",
+            "forecast": [
+                {"date": "2024-10-01", "summary": "Clouds", "temperature_c": 16.4, "feels_like_c": 15.9, "humidity": 76.0, "wind_speed": 4.1, "outdoor_suitability": "fair"},
+                {"date": "2024-10-02", "summary": "Rain", "temperature_c": 14.8, "feels_like_c": 14.1, "humidity": 88.0, "wind_speed": 6.5, "outdoor_suitability": "poor"},
+            ],
+        },
     }
 
 
@@ -115,6 +125,35 @@ def test_itinerary_flights_structured():
     assert len(flights["departure_flights"]) == 1
     assert flights["departure_flights"][0]["airline"] == "SkyWings"
     assert flights["departure_flights"][0]["price"] == 450.0
+
+
+def test_itinerary_weather_structured_and_exact_note():
+    parsed = _parsed(city="Tokyo", origin_city="London")
+    response = generate_itinerary_response(
+        parsed=parsed,
+        plan=_plan(parsed),
+        tool_outputs=_tool_outputs_with_images(),
+        api_key="",
+        memory_used=[],
+    )
+
+    weather = response.itinerary["weather"]
+    assert weather["status"] == "ok"
+    assert weather["source"] == "openweathermap"
+    assert weather["forecast"][0] == {
+        "date": "2024-10-01",
+        "summary": "Clouds",
+        "temperature_c": 16.4,
+        "feels_like_c": 15.9,
+        "temperature_f": None,
+        "feels_like_f": None,
+        "humidity": 76.0,
+        "wind_speed": 4.1,
+        "outdoor_suitability": "fair",
+    }
+    note = next(note for note in response.itinerary["notes"] if note.startswith("Weather note:"))
+    assert "2024-10-01, Clouds, 16.4°C, feels like 15.9°C, outdoor suitability fair" in note
+    assert "2024-10-02, Rain, 14.8°C, feels like 14.1°C, outdoor suitability poor" in note
 
 
 def test_itinerary_preserves_day_slots_and_notes():

@@ -6,6 +6,42 @@ class SearchTool(Protocol):
         ...
 
 
+def run_destination_search_tool(
+    query_intent: str,
+    count: int = 5,
+    search_tool: SearchTool | None = None,
+) -> dict[str, Any]:
+    query = _build_destination_query(query_intent)
+
+    try:
+        tool = search_tool or _build_duckduckgo_tool(count=count)
+        raw_results = tool.invoke(query)
+        results = _normalize_results(raw_results)
+    except ImportError:
+        return _fallback_result(
+            city="",
+            query=query,
+            status="fallback_missing_dependency",
+            message="DuckDuckGo search unavailable because langchain-community and ddgs are not installed.",
+        )
+    except Exception:
+        return _fallback_result(
+            city="",
+            query=query,
+            status="fallback_search_error",
+            message="DuckDuckGo search unavailable because the LangChain search tool failed.",
+        )
+
+    return {
+        "tool_name": "web_search_tool",
+        "status": "ok",
+        "city": "",
+        "source": "duckduckgo_langchain",
+        "query": query,
+        "results": results,
+    }
+
+
 def run_web_search_tool(
     city: str,
     query_intent: str,
@@ -52,6 +88,11 @@ def _build_duckduckgo_tool(count: int) -> SearchTool:
         output_format="list",
         keys_to_include=["title", "link", "snippet"],
     )
+
+
+def _build_destination_query(query_intent: str) -> str:
+    normalized_intent = " ".join(query_intent.strip().split()) or "best travel destinations"
+    return f"{normalized_intent} travel destinations"
 
 
 def _build_query(city: str, query_intent: str) -> str:
