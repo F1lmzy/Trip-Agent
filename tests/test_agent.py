@@ -28,14 +28,25 @@ def make_services(tmp_path) -> AgentServices:
     )
 
 
-def test_handle_chat_returns_clarification_without_tools_when_city_missing():
+def test_handle_chat_suggests_destinations_when_city_missing(tmp_path):
     memory = ShortTermMemory()
+    user_memory = make_long_term_memory(tmp_path)
 
-    response = handle_chat(ChatRequest(user_id="kavin", message="Plan me a trip"), memory=memory)
+    response = handle_chat(
+        ChatRequest(user_id="kavin", message="Plan me a trip. I like anime, food and photography. Medium budget."),
+        memory=memory,
+        user_memory=user_memory,
+        services=make_services(tmp_path),
+    )
 
-    assert response.needs_clarification is True
-    assert response.clarifying_question == "Which city would you like to visit?"
-    assert response.tools_used == []
+    # No city given -> the DestinationRecommendationAgent suggests ranked
+    # cities from RAG instead of asking a bare clarifying question.
+    assert response.needs_clarification is False
+    assert response.itinerary["status"] == "destination_suggestions"
+    suggestions = response.itinerary["suggested_cities"]
+    assert suggestions, "expected at least one suggested city"
+    assert all("city" in s and "rationale" in s for s in suggestions)
+    assert response.tools_used == ["destination_rag"]
     assert memory.has_history("kavin") is True
 
 

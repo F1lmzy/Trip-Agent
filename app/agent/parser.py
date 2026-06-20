@@ -95,10 +95,11 @@ class ParsedRequest(BaseModel):
 
 def parse_user_request(message: str) -> ParsedRequest:
     normalized = message.lower().strip()
+    origin_city = _extract_origin_city(message)
 
     return ParsedRequest(
         raw_message=message,
-        city=_extract_city(message),
+        city=_extract_city(message, origin_city=origin_city),
         duration_days=_extract_duration_days(normalized),
         interests=_extract_interests(normalized),
         budget=_extract_budget(normalized),
@@ -115,18 +116,19 @@ def parse_user_request(message: str) -> ParsedRequest:
         asks_for_flights=_contains_any(
             normalized, ["flight", "flights", "fly", "airfare", "plane", "air ticket", "air tickets"]
         ),
-        origin_city=_extract_origin_city(message),
+        origin_city=origin_city,
         trip_type=_extract_trip_type(normalized),
         is_follow_up=_extract_follow_up_intent(normalized) is not None,
         follow_up_intent=_extract_follow_up_intent(normalized),
     )
 
 
-def _extract_city(message: str) -> str | None:
+def _extract_city(message: str, origin_city: str | None = None) -> str | None:
     # Route phrases. The destination is whichever city is paired with "to",
     # regardless of word order, and is accepted even when it is not a known
     # city (e.g. "to kyoto from singapore" -> Kyoto, "from london to milan"
     # -> Milan). The origin is never mistaken for the destination.
+    origin_lower = (origin_city or "").strip().lower()
     # Order 1: "from <origin> to <destination>".
     route_match = re.search(
         r"\bfrom\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)\s+to\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)",
@@ -158,16 +160,23 @@ def _extract_city(message: str) -> str | None:
 
     # "<verb> to <destination>" with no explicit origin (e.g. "trip to tokyo",
     # "fly to paris"). Only accept known cities here so common verbs like
-    # "to plan" / "to visit" are not mistaken for a destination.
+    # "to plan" / "to visit" are not mistaken for a destination. Skip the
+    # origin so "flying from tokyo" (no destination) does not pick Tokyo.
     to_match = re.search(r"\bto\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)", message, flags=re.IGNORECASE)
     if to_match:
         candidate = _clean_city_candidate(to_match.group(1))
-        if candidate:
+        if candidate and candidate.lower() != origin_lower:
             for city in KNOWN_CITIES:
                 if city.lower() == candidate.lower():
                     return city
 
+    # Known-cities fallback: the first known city mentioned. Skip the origin so
+    # a message that names only an origin ("I'm flying from Singapore, where
+    # should I go?") does not treat that origin as the destination — instead
+    # city stays None and the DestinationRecommendationAgent suggests places.
     for city in KNOWN_CITIES:
+        if city.lower() == origin_lower:
+            continue
         if re.search(rf"\b{re.escape(city)}\b", message, flags=re.IGNORECASE):
             return city
 

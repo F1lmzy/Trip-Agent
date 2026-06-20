@@ -86,8 +86,28 @@ def chat_stream(request: ChatRequest) -> StreamingResponse:
     """Stream the chat flow as Server-Sent Events.
 
     Emits plan, tool, message, and result events, ending with the full
-    ChatResponse payload. Use EventSource in the browser to consume it.
+    ChatResponse payload. Used by API clients via POST; the browser uses the
+    GET /chat/stream endpoint below with EventSource (EventSource is GET-only).
     """
+    return StreamingResponse(
+        stream_chat(request, user_memory=long_term_memory, services=agent_services),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.get("/chat/stream")
+def chat_stream_get(user_id: str, message: str) -> StreamingResponse:
+    """GET variant of /chat/stream for browser EventSource consumption.
+
+    EventSource only supports GET with no request body, so the chat request is
+    passed as query params. The SSE stream is identical to the POST endpoint.
+    """
+    request = ChatRequest(user_id=user_id, message=message)
     return StreamingResponse(
         stream_chat(request, user_memory=long_term_memory, services=agent_services),
         media_type="text/event-stream",

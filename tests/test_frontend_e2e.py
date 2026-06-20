@@ -108,6 +108,54 @@ def test_airport_label_logic_renders_nested_object():
     assert airport_label({"city": "Milan"}) == 'Milan'
 
 
+def test_index_html_contains_reasoning_panel_and_streaming():
+    response = client.get("/")
+    assert response.status_code == 200
+    html = response.text
+
+    # The reasoning panel and EventSource streaming wiring are present.
+    assert "EventSource" in html
+    assert "Agents reasoning" in html
+    assert "reasoning" in html
+    assert "streamChat" in html
+    # Fallback to POST /chat when EventSource is unavailable.
+    assert "postChat" in html
+    # Destination suggestion renderer is present.
+    assert "suggestionsSection" in html
+    assert "Suggested destinations" in html
+
+
+def test_get_chat_stream_endpoint_emits_progressive_events(monkeypatch, tmp_path):
+    # The browser uses GET /chat/stream (EventSource is GET-only). It must
+    # emit the same progressive events as the POST endpoint.
+    _install_services(monkeypatch, tmp_path)
+
+    with client.stream(
+        "GET",
+        "/chat/stream",
+        params={"user_id": "get-stream", "message": "Plan a 2-day trip to Tokyo. Medium budget."},
+    ) as response:
+        assert response.status_code == 200
+        assert "text/event-stream" in response.headers["content-type"]
+        frames = [line for line in response.iter_lines() if line.startswith("data: ")]
+
+    import json
+
+    events = [json.loads(frame[len("data: ") :]) for frame in frames]
+    types = [e["type"] for e in events]
+    assert "agent_start" in types, types
+    assert "plan" in types
+    assert "result" in types
+    result = next(e for e in events if e["type"] == "result")
+    assert result["response"]["itinerary"]["city"] == "Tokyo"
+
+
+def test_get_chat_stream_rejects_missing_params():
+    # Pydantic validation: missing query params -> 422, not a 500.
+    response = client.get("/chat/stream")
+    assert response.status_code == 422
+
+
 def test_chat_itinerary_includes_places_hotels_flights(monkeypatch, tmp_path):
     _install_services(monkeypatch, tmp_path)
 

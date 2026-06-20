@@ -71,17 +71,22 @@ def test_chat_returns_response_shape(monkeypatch, tmp_path):
     assert body["needs_clarification"] is False
 
 
-def test_chat_clarifies_when_city_missing(monkeypatch, tmp_path):
+def test_chat_suggests_destinations_when_city_missing(monkeypatch, tmp_path):
     install_test_long_term_memory(monkeypatch, tmp_path)
     install_test_agent_services(monkeypatch, tmp_path)
 
-    response = client.post("/chat", json={"user_id": "api-clarify-user", "message": "Plan me a trip"})
+    response = client.post(
+        "/chat",
+        json={"user_id": "api-clarify-user", "message": "Plan me a trip. I like anime, food and photography. Medium budget."},
+    )
 
     assert response.status_code == 200
     body = response.json()
-    assert body["needs_clarification"] is True
-    assert body["tools_used"] == []
-    assert body["clarifying_question"] == "Which city would you like to visit?"
+    # No city given -> destination suggestions, not a clarifying question.
+    assert body["needs_clarification"] is False
+    assert body["tools_used"] == ["destination_rag"]
+    assert body["itinerary"]["status"] == "destination_suggestions"
+    assert body["itinerary"]["suggested_cities"], "expected at least one suggested city"
 
 
 def test_memory_endpoints_store_get_and_clear_preferences(monkeypatch, tmp_path):
@@ -144,16 +149,22 @@ def test_chat_stream_emits_sse_events_with_result(monkeypatch, tmp_path):
     assert result_event["response"]["itinerary"]["city"] == "Tokyo"
 
 
-def test_chat_stream_emits_clarification_when_city_missing(monkeypatch, tmp_path):
+def test_chat_stream_emits_destination_suggestion_when_city_missing(monkeypatch, tmp_path):
     install_test_long_term_memory(monkeypatch, tmp_path)
     install_test_agent_services(monkeypatch, tmp_path)
 
     with client.stream(
-        "POST", "/chat/stream", json={"user_id": "stream-clarify", "message": "Plan me a trip"}
+        "POST",
+        "/chat/stream",
+        json={"user_id": "stream-clarify", "message": "Plan me a trip. I like anime, food and photography. Medium budget."},
     ) as response:
         frames = [line for line in response.iter_lines() if line.startswith("data: ")]
 
     import json
 
     events = [json.loads(frame[len("data: ") :]) for frame in frames]
-    assert any(event["type"] == "clarification" for event in events)
+    # The destination suggestion flows through the streaming endpoint. The
+    # final result frame carries the suggestions. (Progressive per-agent
+    # agent_start/agent_end events are added in the streaming iteration.)
+    result = next(event for event in events if event["type"] == "result")
+    assert result["response"]["itinerary"]["status"] == "destination_suggestions"

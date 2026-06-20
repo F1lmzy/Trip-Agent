@@ -145,6 +145,64 @@
       margin-top: 1rem;
     }
 
+    .reasoning {
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      background: var(--surface-muted);
+      margin-bottom: 1rem;
+      overflow: hidden;
+    }
+    .reasoning > summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 0.75rem 1rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      user-select: none;
+    }
+    .reasoning > summary::-webkit-details-marker { display: none; }
+    .reasoning > summary::before {
+      content: '▸';
+      transition: transform 0.15s ease;
+      color: var(--muted);
+    }
+    .reasoning[open] > summary::before { transform: rotate(90deg); }
+    .reasoning .pulse {
+      width: 0.5rem; height: 0.5rem; border-radius: 999px;
+      background: var(--accent); display: inline-block;
+    }
+    .reasoning .pulse.idle { background: var(--muted); }
+    .reasoning-body {
+      padding: 0 1rem 1rem;
+      display: grid;
+      gap: 0.4rem;
+      font-size: 0.9rem;
+    }
+    .reasoning-body .step { color: var(--text); }
+    .reasoning-body .step.agent { font-weight: 600; color: var(--accent); }
+    .reasoning-body .step.tool { color: var(--muted); }
+    .reasoning-body .step.tool::before { content: '↳ '; }
+
+    .suggestion-grid {
+      display: grid;
+      gap: 0.75rem;
+      margin-top: 0.75rem;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    }
+    .suggestion-card {
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      padding: 1rem;
+      background: var(--surface);
+      cursor: pointer;
+    }
+    .suggestion-card:hover { border-color: var(--accent); }
+    .suggestion-card h4 { margin: 0 0 0.25rem; color: var(--accent); }
+    .suggestion-card p { margin: 0; font-size: 0.85rem; color: var(--muted); }
+    .suggestion-card .score { font-size: 0.75rem; color: var(--muted); margin-top: 0.5rem; }
+
     .card {
       border: 1px solid var(--border);
       border-radius: 0.75rem;
@@ -363,16 +421,116 @@
 
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
+      const userId = document.getElementById('user-id').value.trim();
+      const message = messageInput.value.trim();
+      if (!message) return;
       setLoading(true);
 
+      // Prefer live progressive streaming via EventSource (GET endpoint, since
+      // EventSource is GET-only) so the reasoning panel updates as agents run.
+      // Fall back to a plain POST /chat when EventSource is unavailable.
+      if (window.EventSource) {
+        streamChat(userId, message);
+      } else {
+        await postChat(userId, message);
+      }
+    });
+
+    function streamChat(userId, message) {
+      const params = new URLSearchParams({ user_id: userId, message });
+      const source = new EventSource(`/chat/stream?${params.toString()}`);
+
+      // Reset the output to a live reasoning panel + content area.
+      output.className = 'sections';
+      output.innerHTML = '';
+      const reasoning = document.createElement('details');
+      reasoning.className = 'reasoning';
+      reasoning.open = true;
+      reasoning.innerHTML =
+        '<summary><span class="pulse"></span> Agents reasoning</summary><div class="reasoning-body"></div>';
+      output.appendChild(reasoning);
+      const reasoningBody = reasoning.querySelector('.reasoning-body');
+      const contentHost = document.createElement('div');
+      contentHost.className = 'sections';
+      output.appendChild(contentHost);
+      let messageBuffer = '';
+
+      const addStep = (text, cls) => {
+        const div = document.createElement('div');
+        div.className = `step ${cls || ''}`.trim();
+        div.textContent = text;
+        reasoningBody.appendChild(div);
+        reasoningBody.scrollTop = reasoningBody.scrollHeight;
+      };
+      const setDone = () => {
+        reasoning.querySelector('.pulse').classList.add('idle');
+      };
+
+      source.onmessage = (evt) => {
+        let event;
+        try { event = JSON.parse(evt.data); } catch { return; }
+        switch (event.type) {
+          case 'plan':
+            addStep(event.step, '');
+            break;
+          case 'route':
+            addStep(`Routing to ${event.agent}`, 'agent');
+            break;
+          case 'agent_start':
+            addStep(`${event.agent} started`, 'agent');
+            break;
+          case 'agent_end':
+            addStep(`${event.agent} finished`, 'agent');
+            break;
+          case 'tool_start':
+            addStep(`${event.tool} running`, 'tool');
+            break;
+          case 'tool_end':
+            addStep(`${event.tool} done`, 'tool');
+            break;
+          case 'message':
+            messageBuffer += event.delta || '';
+            break;
+          case 'clarification':
+            // Rendered from the final result frame below.
+            break;
+          case 'result':
+            contentHost.innerHTML = '';
+            renderResponseInto(event.response, contentHost);
+            statusBadge.textContent = event.response.needs_clarification ? 'Needs clarification' : 'Complete';
+            setDone();
+            source.close();
+            setLoading(false);
+            break;
+          case 'error':
+            output.className = 'card error';
+            output.innerHTML = `<h3>Request failed</h3><p>${escapeHtml(event.message || 'Stream error.')}</p>`;
+            statusBadge.textContent = 'Error';
+            setDone();
+            source.close();
+            setLoading(false);
+            break;
+        }
+      };
+
+      source.onerror = () => {
+        // EventSource auto-reconnects; only treat as failure if we never got
+        // a result (contentHost still empty).
+        if (!contentHost.children.length) {
+          source.close();
+          setDone();
+          // Fall back to the synchronous POST path so the user still gets a result.
+          postChat(userId, message);
+        }
+      };
+    }
+
+    async function postChat(userId, message) {
       try {
         const response = await fetch('/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            user_id: document.getElementById('user-id').value.trim(),
-            message: messageInput.value.trim()
-          })
+          body: JSON.stringify({ user_id: userId, message })
         });
 
         const data = await response.json();
@@ -388,7 +546,7 @@
       } finally {
         setLoading(false);
       }
-    });
+    }
 
     function setLoading(isLoading) {
       sendButton.disabled = isLoading;
@@ -401,22 +559,26 @@
     }
 
     function renderResponse(data) {
-      output.className = 'sections';
-      output.innerHTML = '';
-      output.appendChild(messageSection(data));
+      renderResponseInto(data, output);
+    }
+
+    function renderResponseInto(data, host) {
+      host.className = 'sections';
+      host.innerHTML = '';
+      host.appendChild(messageSection(data));
 
       if (data.needs_clarification) {
-        output.appendChild(simpleCard('Clarifying question', data.clarifying_question || data.message));
-        output.appendChild(rawDetails(data));
+        host.appendChild(simpleCard('Clarifying question', data.clarifying_question || data.message));
+        host.appendChild(rawDetails(data));
         return;
       }
 
-      output.appendChild(itinerarySection(data.itinerary || {}));
-      output.appendChild(listSection('Tools used', data.tools_used || [], 'No tools were selected.'));
-      output.appendChild(listSection('Planning steps', data.plan || [], 'No plan steps returned.', true));
-      output.appendChild(listSection('Memory used', data.memory_used || [], 'No long-term memories were used.'));
-      output.appendChild(ragTraceSection(data.rag_trace || {}));
-      output.appendChild(rawDetails(data));
+      host.appendChild(itinerarySection(data.itinerary || {}));
+      host.appendChild(listSection('Tools used', data.tools_used || [], 'No tools were selected.'));
+      host.appendChild(listSection('Planning steps', data.plan || [], 'No plan steps returned.', true));
+      host.appendChild(listSection('Memory used', data.memory_used || [], 'No long-term memories were used.'));
+      host.appendChild(ragTraceSection(data.rag_trace || {}));
+      host.appendChild(rawDetails(data));
     }
 
     function messageSection(data) {
@@ -454,10 +616,36 @@
         section.appendChild(listElement(itinerary.notes, false, 'Notes'));
       }
 
+      section.appendChild(suggestionsSection(itinerary));
       section.appendChild(placesSection(itinerary.places || []));
       section.appendChild(hotelsSection(itinerary.hotels || []));
       section.appendChild(flightsSection(itinerary.flights || {}));
       return section;
+    }
+
+    function suggestionsSection(itinerary) {
+      const suggestions = Array.isArray(itinerary.suggested_cities) ? itinerary.suggested_cities : [];
+      if (!suggestions.length) return document.createElement('span');
+      const wrap = document.createElement('div');
+      wrap.innerHTML = '<h4>Suggested destinations</h4>';
+      const grid = document.createElement('div');
+      grid.className = 'suggestion-grid';
+      suggestions.forEach((s) => {
+        const card = document.createElement('article');
+        card.className = 'suggestion-card';
+        card.innerHTML =
+          `<h4>${escapeHtml(s.city || '')}</h4>` +
+          `<p>${escapeHtml(s.rationale || '')}</p>` +
+          (s.match_score != null ? `<div class="score">match ${(s.match_score * 100).toFixed(0)}%</div>` : '');
+        // Clicking a suggestion fills the chat box so the user can plan it.
+        card.addEventListener('click', () => {
+          messageInput.value = `Plan a trip to ${s.city}.`;
+          messageInput.focus();
+        });
+        grid.appendChild(card);
+      });
+      wrap.appendChild(grid);
+      return wrap;
     }
 
     function dayCard(title, day) {

@@ -7,6 +7,7 @@ import httpx
 from app.agent.parser import ParsedRequest, parse_user_request
 from app.agent.planner import PlanningResult, create_trip_plan
 from app.agent.response_generator import generate_itinerary_response
+from app.agents import AgentContext, Supervisor
 from app.config import get_settings
 from app.memory.long_term import LongTermMemory, long_term_memory
 from app.memory.short_term import ShortTermMemory, short_term_memory
@@ -34,6 +35,7 @@ class AgentServices:
     serpapi_api_key: str | None = None
     serpapi_client: httpx.Client | None = None
     image_client: httpx.Client | None = None
+    vector_store: Any | None = None
     use_environment: bool = True
     rag_seeded: bool = False
 
@@ -44,33 +46,50 @@ def handle_chat(
     user_memory: LongTermMemory | None = None,
     services: AgentServices | None = None,
 ) -> ChatResponse:
-    memory = memory or short_term_memory
-    user_memory = user_memory or long_term_memory
-    services = services or AgentServices()
+    return _run_chat_core(
+        request,
+        memory=memory or short_term_memory,
+        user_memory=user_memory or long_term_memory,
+        services=services or AgentServices(),
+        event_emitter=None,
+    )
 
+
+def _run_chat_core(
+    request: ChatRequest,
+    memory: ShortTermMemory,
+    user_memory: LongTermMemory,
+    services: AgentServices,
+    event_emitter: Any = None,
+) -> ChatResponse:
+    """Shared core for the synchronous and streaming chat paths.
+
+    ``event_emitter`` is an optional callable invoked with event dicts as the
+    flow progresses (plan steps, agent start/end, tool calls). When None, events
+    are still recorded on the AgentContext but not forwarded — keeping the
+    synchronous /chat path identical to before.
+    """
     parsed = parse_user_request(request.message)
     rag_context_is_weak = parsed.city is not None and not has_curated_rag_city(parsed.city)
     plan = create_trip_plan(parsed, rag_context_is_weak=rag_context_is_weak)
-    has_prior_context = memory.has_history(request.user_id)
 
-    if plan.needs_clarification:
-        response = _build_clarification_response(plan)
-    elif parsed.is_follow_up:
-        memory_used = user_memory.search_preferences(request.user_id, request.message)
-        response = _build_follow_up_response(parsed, plan, has_prior_context, memory_used)
-    else:
-        memory_used = user_memory.search_preferences(request.user_id, request.message)
-        tool_outputs = _execute_tools(parsed, plan, services)
-        _save_stable_preferences(request.user_id, parsed, user_memory)
-        response = generate_itinerary_response(
-            parsed=parsed,
-            plan=plan,
-            tool_outputs=tool_outputs,
-            memory_used=memory_used,
-            api_key=_service_value(services, "openrouter_api_key", "openrouter_api_key"),
-            model=_service_value(services, "openrouter_model", "openrouter_model"),
-            client=services.openrouter_client,
-        )
+    # Delegate to the supervisor-coordinated multi-agent system. The routing
+    # mirrors the original branching exactly (clarification / follow-up /
+    # fresh itinerary / destination suggestions), so the synchronous /chat
+    # behavior is unchanged.
+    ctx = AgentContext(
+        parsed=parsed,
+        plan=plan,
+        services=services,
+        memory=memory,
+        user_memory=user_memory,
+        user_id=request.user_id,
+        event_emitter=event_emitter,
+    )
+    # Surface plan steps as progressive events (streaming UI shows them first).
+    for step in plan.plan:
+        ctx.emit({"type": "plan", "step": step})
+    response = Supervisor().run(ctx)
 
     memory.add_message(request.user_id, "user", request.message)
     memory.add_message(request.user_id, "assistant", response.message)

@@ -283,3 +283,21 @@ def test_parse_reversed_order_with_full_interests_message():
     assert "anime" in parsed.interests
     assert "food" in parsed.interests
     assert "photography" in parsed.interests
+
+
+def test_parse_origin_only_not_treated_as_destination():
+    # Regression: a message that names only an origin ("flying from Singapore")
+    # with no destination used to pick the origin as the destination via the
+    # known-cities fallback, so the destination-recommendation agent never ran
+    # and the user got an itinerary for their own origin city.
+    parsed = parse_user_request(
+        "I like anime, food and photography, medium budget, 2 days. Flying from Singapore."
+    )
+    assert parsed.origin_city == "Singapore"
+    assert parsed.city is None
+
+
+def test_parse_origin_only_known_city_not_destination():
+    parsed = parse_user_request("Plan a trip from Singapore, I like anime and food.")
+    assert parsed.origin_city == "Singapore"
+    assert parsed.city is None
