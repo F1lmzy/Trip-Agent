@@ -33,11 +33,13 @@ def generate_itinerary_response(
 
     rag_trace = _extract_rag_trace(tool_outputs)
 
-    if llm_result["status"] == "ok" and _usable_llm_content(llm_result.get("content")):
-        message = llm_result["content"]
+    content = llm_result.get("content")
+    if llm_result["status"] == "ok" and _usable_llm_content(content) and _content_matches_itinerary_contract(content):
+        message = content
         itinerary = _itinerary_from_llm_content(parsed, message, tool_outputs)
     else:
-        message = _fallback_message(parsed, llm_result["status"])
+        fallback_status = llm_result["status"] if llm_result["status"] != "ok" else "fallback_unparseable_content"
+        message = _fallback_message(parsed, fallback_status)
         itinerary = _fallback_itinerary(parsed, tool_outputs)
 
     return ChatResponse(
@@ -85,6 +87,28 @@ def _usable_llm_content(content: Any) -> bool:
     return isinstance(content, str) and bool(content.strip()) and content.strip().lower() not in {"none", "null"}
 
 
+def _content_matches_itinerary_contract(content: Any) -> bool:
+    """Reject non-itinerary OpenRouter responses such as safety labels.
+
+    Some upstream models can return short moderation/status text like
+    ``User Safety: safe`` with HTTP 200. Treat that as unusable unless the
+    content contains the itinerary structure we explicitly requested.
+    """
+    if not isinstance(content, str):
+        return False
+
+    import re
+
+    text = content.strip()
+    if re.fullmatch(r"user\s+safety\s*:\s*\w+", text, flags=re.IGNORECASE):
+        return False
+
+    has_day_heading = re.search(r"(?:\*\*)?Day\s+\d+", text, flags=re.IGNORECASE) is not None
+    has_time_slot = re.search(r"\b(Morning|Afternoon|Evening)\b", text, flags=re.IGNORECASE) is not None
+    has_itinerary_table = bool(_parse_markdown_table(text))
+    return has_itinerary_table or (has_day_heading and has_time_slot)
+
+
 def build_itinerary_messages(
     parsed: ParsedRequest,
     plan: PlanningResult,
@@ -97,6 +121,7 @@ def build_itinerary_messages(
         "**Day N – YYYY-MM-DD (weather if available)**, then exactly three bullets: "
         "- **Morning**: <specific activities>, - **Afternoon**: <specific activities>, - **Evening**: <specific activities>. "
         "Use those slot labels exactly, one slot per line, and prefer ':' after each label. Never return None/null/empty content. "
+        "Do not output moderation/status labels such as 'User Safety: safe'; output only the itinerary Markdown. "
         "Use weather, budget, RAG attraction context, memory, and web search context when available. "
         "When using weather, copy the provided forecast dates, summaries, temperatures, and suitability exactly; do not invent weather details. "
         "Mention hotel suggestions only when hotel output is present. "

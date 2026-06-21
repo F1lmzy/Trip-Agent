@@ -354,6 +354,32 @@ def test_response_generator_falls_back_without_openrouter_key(monkeypatch):
     assert "fallback_missing_api_key" in response.message
 
 
+def test_response_generator_rejects_openrouter_user_safety_status_content():
+    parsed = parse_user_request("Plan a 3-day trip to Delhi with markets and history. Medium budget.")
+    plan = create_trip_plan(parsed, rag_context_is_weak=True)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"choices": [{"message": {"content": "User Safety: safe"}}]})
+
+    response = generate_itinerary_response(
+        parsed=parsed,
+        plan=plan,
+        tool_outputs={
+            "attraction_rag_tool": {"results": [{"name": "Red Fort"}], "rag_trace": {"hop_1": [], "hop_2": []}},
+            "budget_tool": {"budget_level": "medium"},
+        },
+        memory_used=[],
+        api_key="test-key",
+        model="test-model",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    assert response.message != "User Safety: safe"
+    assert "fallback_unparseable_content" in response.message
+    assert response.itinerary["status"] == "generated_with_fallback_template"
+    assert response.itinerary["day_1"]["morning"]
+
+
 def test_response_generator_parses_bold_markdown_openrouter_slots():
     parsed = parse_user_request("Plan a 2-day trip to Beijing with food.")
     plan = create_trip_plan(parsed, rag_context_is_weak=True)
@@ -646,7 +672,8 @@ def test_response_generator_includes_context_in_openrouter_prompt():
         assert "Tokyo overview" in payload
         assert "I like museums" in payload
         assert "exactly three bullets" in payload
-        return httpx.Response(200, json={"choices": [{"message": {"content": "LLM itinerary"}}]})
+        content = "**Day 1**\n- **Morning**: Visit Akihabara.\n- **Afternoon**: Explore Ueno.\n- **Evening**: Eat ramen.\n\n**Day 2**\n- **Morning**: Visit Meiji Shrine.\n- **Afternoon**: Explore Harajuku.\n- **Evening**: Try izakaya food."
+        return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
     response = generate_itinerary_response(
@@ -659,7 +686,7 @@ def test_response_generator_includes_context_in_openrouter_prompt():
         client=client,
     )
 
-    assert response.message == "LLM itinerary"
+    assert "**Day 1**" in response.message
     assert response.itinerary["day_1"]["morning"]
     assert response.rag_trace == tool_outputs["attraction_rag_tool"]["rag_trace"]
 
