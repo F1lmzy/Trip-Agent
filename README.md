@@ -301,9 +301,7 @@ Mount the disk at:
 
 ## Demo Video
 
-
-Uploading Screen Recording 2026-06-21 at 10.45.47 PM.mp4…
-
+https://github.com/user-attachments/assets/6b0498d7-7e9d-4b6d-9266-6d2a58ff708e
 
 ## Known limitations
 
