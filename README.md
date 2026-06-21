@@ -299,6 +299,12 @@ Mount the disk at:
 /var/data
 ```
 
+## Demo Video
+
+
+Uploading Screen Recording 2026-06-21 at 10.45.47 PM.mp4…
+
+
 ## Known limitations
 
 - OpenWeatherMap forecast is near-term, not a full future travel-date forecast.
