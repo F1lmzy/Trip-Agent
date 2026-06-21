@@ -15,7 +15,11 @@ this agent does not depend on private orchestrator internals.
 
 from __future__ import annotations
 
-from app.agent.response_builders import build_follow_up_response, save_stable_preferences
+from app.agent.response_builders import (
+    apply_current_preference_overrides,
+    build_follow_up_response,
+    save_stable_preferences,
+)
 from app.agent.service_utils import service_value
 from app.agent.tool_executor import execute_tools
 from app.agents.base import Agent, AgentContext
@@ -38,6 +42,7 @@ class ItineraryAgent(Agent):
             return response
 
         memory_used = ctx.user_memory.search_preferences(ctx.user_id, ctx.parsed.raw_message)
+        memory_used = apply_current_preference_overrides(memory_used, ctx.parsed)
         ctx.emit({"type": "tools_start"})
         tool_outputs = execute_tools(ctx.parsed, ctx.plan, ctx.services)
         for tool_name in tool_outputs:

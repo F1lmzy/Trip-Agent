@@ -34,6 +34,14 @@ def create_trip_plan(parsed: ParsedRequest, rag_context_is_weak: bool = False) -
     if parsed.is_follow_up and parsed.city is None:
         return _plan_follow_up(parsed)
 
+    if parsed.budget is None and not parsed.is_follow_up:
+        return PlanningResult(
+            plan=["Ask for budget before calling travel-planning tools"],
+            selected_tools=[],
+            needs_clarification=True,
+            clarifying_question="What budget level would you like for this trip — low, medium, or luxury?",
+        )
+
     selected_tools = [ToolName.ATTRACTION_RAG, ToolName.WEATHER, ToolName.BUDGET]
     assumptions: list[str] = []
     plan = list(CORE_PLAN_STEPS)

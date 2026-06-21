@@ -52,11 +52,29 @@ def build_follow_up_response(
 
 
 def save_stable_preferences(user_id: str, parsed: ParsedRequest, user_memory: LongTermMemory) -> None:
+    current_budget_preference = f"Budget preference: {parsed.budget}" if parsed.budget else None
+    if current_budget_preference:
+        user_memory.delete_preferences_with_prefix(
+            user_id,
+            "Budget preference:",
+            except_value=current_budget_preference,
+        )
+
     existing = set(user_memory.get_preferences(user_id))
     for preference in _stable_preferences_from(parsed):
         if preference not in existing:
             user_memory.add_preference(user_id, preference)
             existing.add(preference)
+
+
+def apply_current_preference_overrides(memory_used: list[str], parsed: ParsedRequest) -> list[str]:
+    """Remove stale long-term memories contradicted by the current request."""
+    filtered = list(memory_used)
+    if parsed.budget:
+        current = f"Budget preference: {parsed.budget}"
+        filtered = [pref for pref in filtered if not pref.startswith("Budget preference:")]
+        filtered.append(current)
+    return filtered
 
 
 def _stable_preferences_from(parsed: ParsedRequest) -> list[str]:

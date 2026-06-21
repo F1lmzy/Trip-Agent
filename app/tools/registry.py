@@ -36,20 +36,30 @@ _TOOL_REGISTRY: dict[str, ToolInfo] = {
         name="Budget",
         description="Low/medium/luxury budget guidance for the itinerary.",
     ),
-    "hotel_tool": ToolInfo(
-        id="hotel_tool",
-        name="Hotels",
-        description="Curated mock hotel suggestions filtered by budget.",
+    "serpapi_hotel_tool": ToolInfo(
+        id="serpapi_hotel_tool",
+        name="Hotels (SerpAPI)",
+        description="Real-time hotel search via SerpAPI Google Hotels with live pricing and ratings.",
     ),
-    "flight_tool": ToolInfo(
-        id="flight_tool",
-        name="Flights",
-        description="Mock flight suggestions between two locations and dates.",
+    "serpapi_flight_tool": ToolInfo(
+        id="serpapi_flight_tool",
+        name="Flights (SerpAPI)",
+        description="Real-time flight search via SerpAPI Google Flights with live pricing and segments.",
     ),
     "web_search_tool": ToolInfo(
         id="web_search_tool",
         name="Web Search",
         description="Fresh travel context via LangChain DuckDuckGo search.",
+    ),
+    "destination_search_tool": ToolInfo(
+        id="destination_search_tool",
+        name="Destination Search",
+        description="Destination discovery and inspiration via DuckDuckGo search.",
+    ),
+    "wikimedia_image_tool": ToolInfo(
+        id="wikimedia_image_tool",
+        name="Wikimedia Image Lookup",
+        description="Resolve a place or attraction name to a Wikimedia Commons image URL.",
     ),
 }
 

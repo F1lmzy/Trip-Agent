@@ -24,22 +24,31 @@ def test_planner_selects_core_tools_for_normal_trip():
     assert result.plan
 
 
+def test_planner_sets_clarification_when_budget_missing():
+    parsed = parse_user_request("Plan a 2-day trip to Tokyo.")
+    result = create_trip_plan(parsed)
+
+    assert result.needs_clarification is True
+    assert result.selected_tools == []
+    assert result.clarifying_question == "What budget level would you like for this trip — low, medium, or luxury?"
+
+
 def test_planner_selects_hotel_only_when_requested():
-    parsed = parse_user_request("Plan a Paris trip and suggest hotels.")
+    parsed = parse_user_request("Plan a Paris trip with medium budget and suggest hotels.")
     result = create_trip_plan(parsed)
 
     assert "hotel_tool" in result.selected_tools
 
 
 def test_planner_selects_web_search_for_current_info():
-    parsed = parse_user_request("Plan a Tokyo trip with current events and latest food spots.")
+    parsed = parse_user_request("Plan a Tokyo trip with medium budget, current events and latest food spots.")
     result = create_trip_plan(parsed)
 
     assert "web_search_tool" in result.selected_tools
 
 
 def test_planner_selects_web_search_when_rag_context_is_weak():
-    parsed = parse_user_request("Plan a 2-day trip to Reykjavik.")
+    parsed = parse_user_request("Plan a 2-day trip to Reykjavik with medium budget.")
     result = create_trip_plan(parsed, rag_context_is_weak=True)
 
     assert "web_search_tool" in result.selected_tools

@@ -33,7 +33,7 @@ def generate_itinerary_response(
 
     rag_trace = _extract_rag_trace(tool_outputs)
 
-    if llm_result["status"] == "ok" and llm_result.get("content"):
+    if llm_result["status"] == "ok" and _usable_llm_content(llm_result.get("content")):
         message = llm_result["content"]
         itinerary = _itinerary_from_llm_content(parsed, message, tool_outputs)
     else:
@@ -81,6 +81,10 @@ def _call_openrouter_with_deadline(
         }
 
 
+def _usable_llm_content(content: Any) -> bool:
+    return isinstance(content, str) and bool(content.strip()) and content.strip().lower() not in {"none", "null"}
+
+
 def build_itinerary_messages(
     parsed: ParsedRequest,
     plan: PlanningResult,
@@ -89,7 +93,10 @@ def build_itinerary_messages(
 ) -> list[dict[str, str]]:
     system_message = (
         "You are a travel planning assistant. Generate a personalized itinerary using only the provided context. "
-        "Return a concise response with a structured itinerary organized by day, morning, afternoon, and evening. "
+        "Return the itinerary in this exact parseable Markdown shape for every day: "
+        "**Day N – YYYY-MM-DD (weather if available)**, then exactly three bullets: "
+        "- **Morning**: <specific activities>, - **Afternoon**: <specific activities>, - **Evening**: <specific activities>. "
+        "Use those slot labels exactly, one slot per line, and prefer ':' after each label. Never return None/null/empty content. "
         "Use weather, budget, RAG attraction context, memory, and web search context when available. "
         "When using weather, copy the provided forecast dates, summaries, temperatures, and suitability exactly; do not invent weather details. "
         "Mention hotel suggestions only when hotel output is present. "
@@ -104,7 +111,10 @@ def build_itinerary_messages(
         "tool_outputs": tool_outputs,
         "rag_trace": _extract_rag_trace(tool_outputs),
         "required_format": {
-            f"day_{day}": ["morning", "afternoon", "evening"] for day in range(1, parsed.duration_days + 1)
+            "markdown_contract": "For each day output: **Day N – date** then '- **Morning**: ...', '- **Afternoon**: ...', '- **Evening**: ...' on separate lines.",
+            "days": {
+                f"day_{day}": ["morning", "afternoon", "evening"] for day in range(1, parsed.duration_days + 1)
+            },
         },
     }
     return [
@@ -136,8 +146,9 @@ def _itinerary_from_llm_content(parsed: ParsedRequest, content: str, tool_output
             }
             continue
 
-        pattern = rf"(?:\*\*)?Day\s+{day}(?:\*\*)?(.+?)(?=(?:\*\*)?Day\s+{day + 1}(?:\*\*)?|$)"
-        match = re.search(pattern, content, flags=re.IGNORECASE | re.DOTALL)
+        post_itinerary_heading = _post_itinerary_heading_pattern()
+        pattern = rf"(?:\*\*)?Day\s+{day}(?:\*\*)?(.+?)(?=(?:\*\*)?Day\s+{day + 1}(?:\*\*)?|{post_itinerary_heading}|\Z)"
+        match = re.search(pattern, content, flags=re.IGNORECASE | re.DOTALL | re.MULTILINE)
         if not match:
             itinerary[f"day_{day}"] = fallback[f"day_{day}"]
             continue
@@ -216,28 +227,44 @@ def _table_slots_for_day(table_rows: list[dict[str, str]], day: int) -> dict[str
     return None
 
 
+def _post_itinerary_heading_pattern() -> str:
+    return r"^\s*(?:[-•]\s*)?\*{0,2}(?:assumptions?|notes?|considerations?|caveats?|important notes?|booking notes?)\*{0,2}\s*:"
+
+
 def _extract_time_slot(section: str, slot: str) -> str | None:
     import re
 
-    # Format 1: label with colon — "**Morning**: content" or "**Morning**: content until next label"
+    # Common separators a model might use after the bold label.
+    sep = r"(?:\s*[\-–—:]+\s*)"
+    post_itinerary_heading = _post_itinerary_heading_pattern()
+
+    # Format 1: label with colon — "**Morning**: content"
     label_colon = rf"\*{{0,2}}\s*{slot}\s*\*{{0,2}}\s*:"
-    next_label_colon = r"\*{0,2}\s*(?:morning|afternoon|evening|budget|memory|note)\s*\*{0,2}\s*:"
-    pattern_colon = rf"{label_colon}\s*(.+?)(?=(?:{next_label_colon})|\n\s*-\s*\*{{0,2}}(?:Morning|Afternoon|Evening|Budget|Memory|Note)\*{{0,2}}\s*:|\n\s*\*|$)"
-    match = re.search(pattern_colon, section, flags=re.IGNORECASE | re.DOTALL)
+    next_label = r"\*{0,2}\s*(?:morning|afternoon|evening|budget|memory|note)\s*\*{0,2}\s*(?::|\s*[\-–—]+)\s*"
+    pattern_colon = rf"{label_colon}\s*(.+?)(?=(?:{next_label})|\n\s*\*{{0,2}}Day|{post_itinerary_heading}|$)"
+    match = re.search(pattern_colon, section, flags=re.IGNORECASE | re.DOTALL | re.MULTILINE)
     if match:
         value = " ".join(match.group(1).replace("**", "").split()).strip(" -.;")
         return value or None
 
-    # Format 2: label as standalone header without colon — "**Morning**\n- content\n\n**Afternoon**"
-    # The label appears on its own line, content follows on subsequent lines
-    # until the next time-slot label or end of section.
+    # Format 2: label as standalone header without colon — "**Morning**\n- content"
     label_header = rf"\*{{0,2}}\s*{slot}\s*\*{{0,2}}\s*\n"
-    next_label_header = r"\*{0,2}\s*(?:morning|afternoon|evening|budget|memory|note|day)\s*\*{0,2}\s*(?:\n|:|$)"
-    pattern_header = rf"{label_header}(.+?)(?=(?:{next_label_header})|$)"
-    match = re.search(pattern_header, section, flags=re.IGNORECASE | re.DOTALL)
+    next_label_header = r"\*{0,2}\s*(?:morning|afternoon|evening|budget|memory|note|day)\s*\*{0,2}\s*(?:\n|:|\s*[\-–—:]|$)"
+    pattern_header = rf"{label_header}(.+?)(?=(?:{next_label_header})|{post_itinerary_heading}|$)"
+    match = re.search(pattern_header, section, flags=re.IGNORECASE | re.DOTALL | re.MULTILINE)
     if match:
         raw = match.group(1).replace("**", "")
-        # Collapse bullet points and newlines into a single readable line.
+        raw = re.sub(r"^\s*[-•]\s*", "", raw, flags=re.MULTILINE)
+        value = " ".join(raw.split()).strip(" -.;|")
+        return value or None
+
+    # Format 3: bullet + bold label + separator — "- **Morning** – content" or "- **Morning**: content"
+    bullet_label = rf"^\s*[-•]\s+\*{{0,2}}{slot}\s*\*{{0,2}}{sep}"
+    next_slot_or_day = rf"(?:^\s*[-•]\s+\*{{0,2}}(?:morning|afternoon|evening|budget|memory|note)\s*\*{{0,2}}{sep}|\*{{0,2}}Day\b|$)"
+    pattern_bullet = rf"{bullet_label}(.+?)(?={next_slot_or_day}|{post_itinerary_heading}|\n\n|\n-\s*\*|$)"
+    match = re.search(pattern_bullet, section, flags=re.IGNORECASE | re.DOTALL | re.MULTILINE)
+    if match:
+        raw = match.group(1).replace("**", "")
         raw = re.sub(r"^\s*[-•]\s*", "", raw, flags=re.MULTILINE)
         value = " ".join(raw.split()).strip(" -.;|")
         return value or None
@@ -269,17 +296,37 @@ def _fallback_itinerary(parsed: ParsedRequest, tool_outputs: dict[str, Any]) -> 
         "notes": [note for note in [weather_note, budget_note, hotel_note, web_note, flight_note] if note],
     }
 
+    morning_templates = [
+        "Begin day {day} in {city} at {place}.",
+        "Start with {place} in {city}.",
+        "Spend the morning around {place}.",
+    ]
+    afternoon_templates = [
+        "Pair that with {place} for the afternoon.",
+        "Head next to {place} for a different side of {city}.",
+        "Use the afternoon for {place}.",
+    ]
+
     for day in range(1, duration_days + 1):
         first = attractions[(day - 1) * 3 % len(attractions)]
         second = attractions[((day - 1) * 3 + 1) % len(attractions)]
         third = attractions[((day - 1) * 3 + 2) % len(attractions)]
         itinerary[f"day_{day}"] = {
-            "morning": f"Start day {day} in {city} with {first}.",
-            "afternoon": f"Continue with {second}, keeping travel time clustered by neighborhood.",
-            "evening": f"Finish with {third} or a nearby dinner area that matches your budget.",
+            "morning": morning_templates[(day - 1) % len(morning_templates)].format(day=day, city=city, place=first),
+            "afternoon": afternoon_templates[(day - 1) % len(afternoon_templates)].format(city=city, place=second),
+            "evening": _fallback_evening_slot(parsed, city, third),
         }
 
+
     return _enrich_itinerary(itinerary, tool_outputs)
+
+
+def _fallback_evening_slot(parsed: ParsedRequest, city: str, place: str) -> str:
+    if "nightlife" in parsed.interests:
+        return f"Use the evening for local bars near {place}, choosing well-reviewed spots that fit your budget."
+    if "food" in parsed.interests:
+        return f"End near {place} with a local dinner that fits your budget."
+    return f"Finish around {place} or a nearby dinner area that matches your budget."
 
 
 def _fallback_message(parsed: ParsedRequest, status: str) -> str:

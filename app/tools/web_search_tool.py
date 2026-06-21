@@ -5,6 +5,7 @@ logger = logging.getLogger(__name__)
 
 
 class SearchTool(Protocol):
+    def invoke(self, query: str) -> Any:
         ...
 
 
@@ -92,9 +93,22 @@ def run_web_search_tool(
 
 def _build_duckduckgo_tool(count: int) -> SearchTool:
     from langchain_community.tools import DuckDuckGoSearchResults
+    from langchain_community.utilities.duckduckgo_search import DuckDuckGoSearchAPIWrapper
 
+    # LangChain's default wrapper uses DDGS(region="wt-wt", backend="auto").
+    # In some DNS environments DDGS' auto backend tries the Wikipedia engine at
+    # wt.wikipedia.org, which is not a valid public Wikipedia host and produces
+    # noisy DNS failures before falling back. Use the DuckDuckGo HTML backend and
+    # a concrete region to keep searches on DuckDuckGo-only endpoints.
+    wrapper = DuckDuckGoSearchAPIWrapper(
+        region="us-en",
+        backend="html",
+        time=None,
+        max_results=max(1, min(count, 10)),
+    )
     return DuckDuckGoSearchResults(
         num_results=max(1, min(count, 10)),
+        api_wrapper=wrapper,
         output_format="list",
         keys_to_include=["title", "link", "snippet"],
     )

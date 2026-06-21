@@ -342,6 +342,23 @@ def test_parse_attractions_cleans_wikitext_markup_from_descriptions():
     assert "''" not in maritime.description
 
 
+def test_parse_attractions_handles_template_fields_in_different_order():
+    wikitext = """
+{{see
+| content=Hilltop royal fortress with city views.
+| url=https://example.com/castle
+| name=Edinburgh Castle
+}}
+{{do | content=Walk the historic central street. | name=Royal Mile }}
+"""
+
+    attractions = _parse_attractions_from_wikitext(wikitext, "Edinburgh")
+
+    by_name = {a.name: a.description for a in attractions}
+    assert by_name["Edinburgh Castle"] == "Hilltop royal fortress with city views"
+    assert by_name["Royal Mile"] == "Walk the historic central street"
+
+
 def test_parse_attractions_returns_empty_for_no_templates():
     wikitext = "This is just a plain paragraph with no attraction listings."
 
@@ -360,6 +377,14 @@ def test_clean_wikitext_strips_links_bold_italic_and_templates():
     assert "{{" not in cleaned
     assert "Albert Dock" in cleaned
     assert "galleries" in cleaned
+
+
+def test_clean_wikitext_strips_external_link_markup():
+    raw = "[https://www.doorsopendays.org.uk/ Doors Open Day] opens historic buildings."
+
+    cleaned = _clean_wikitext(raw)
+
+    assert cleaned == "Doors Open Day opens historic buildings"
 
 
 def test_fetch_city_attractions_with_mock_api():

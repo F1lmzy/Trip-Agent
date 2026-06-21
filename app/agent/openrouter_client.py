@@ -54,11 +54,18 @@ def call_openrouter(
             message="OpenRouter failed or returned an invalid response.",
         )
 
+    if not isinstance(content, str) or not content.strip() or content.strip().lower() in {"none", "null"}:
+        return _fallback_result(
+            status="fallback_empty_content",
+            model=resolved_model,
+            message="OpenRouter returned an empty response.",
+        )
+
     return {
         "status": "ok",
         "source": "openrouter",
         "model": resolved_model,
-        "content": str(content),
+        "content": content,
     }
 
 

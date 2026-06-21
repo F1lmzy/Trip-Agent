@@ -62,6 +62,6 @@ def _normalize_budget(budget: str | None) -> str:
         return "low"
     if normalized in {"moderate", "medium", "mid-range", "midrange"}:
         return "medium"
-    if normalized in {"luxury", "premium", "high-end", "expensive"}:
+    if normalized in {"luxury", "premium", "high-end", "expensive", "unlimited budget", "unlimited", "no budget limit", "no budget cap"}:
         return "luxury"
     return normalized

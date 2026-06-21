@@ -369,3 +369,72 @@ def test_attach_images_does_not_overwrite_existing_image_url():
     attach_images(tool_outputs, services)
 
     assert tool_outputs["attraction_rag_tool"]["results"][0]["image_url"] == "https://already.set/img.jpg"
+
+
+def test_attach_images_reads_city_from_rag_metadata(monkeypatch):
+    """RAG items store city in metadata sub-dict; attach_images should
+    pass it to resolve_place_image for disambiguated image search."""
+    captured_args = {}
+
+    def fake_resolve(place_name, city=None, client=None, timeout=15.0):
+        captured_args["place_name"] = place_name
+        captured_args["city"] = city
+        return "https://upload.wikimedia.org/mock.jpg"
+
+    monkeypatch.setattr(
+        "app.agent.tool_executor.resolve_place_image",
+        fake_resolve,
+    )
+
+    tool_outputs = {
+        "attraction_rag_tool": {
+            "status": "ok",
+            "results": [
+                {
+                    "name": "Old Town",
+                    "description": "Old Town in Edinburgh.",
+                    "metadata": {"city": "Edinburgh", "source": "external_wikivoyage"},
+                }
+            ],
+        }
+    }
+    services = AgentServices(image_client=FakeImageClient(), use_environment=False)
+
+    attach_images(tool_outputs, services)
+
+    assert captured_args["place_name"] == "Old Town"
+    assert captured_args["city"] == "Edinburgh"
+
+
+def test_attach_images_top_level_city_takes_precedence_over_metadata(monkeypatch):
+    captured_args = {}
+
+    def fake_resolve(place_name, city=None, client=None, timeout=15.0):
+        captured_args["place_name"] = place_name
+        captured_args["city"] = city
+        return "https://upload.wikimedia.org/mock.jpg"
+
+    monkeypatch.setattr(
+        "app.agent.tool_executor.resolve_place_image",
+        fake_resolve,
+    )
+
+    tool_outputs = {
+        "attraction_rag_tool": {
+            "status": "ok",
+            "results": [
+                {
+                    "name": "Old Town",
+                    "description": "Old Town in Prague.",
+                    "city": "Prague",
+                    "metadata": {"city": "Edinburgh"},
+                }
+            ],
+        }
+    }
+    services = AgentServices(image_client=FakeImageClient(), use_environment=False)
+
+    attach_images(tool_outputs, services)
+
+    # Top-level city wins over metadata.city
+    assert captured_args["city"] == "Prague"

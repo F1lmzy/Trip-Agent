@@ -4,7 +4,7 @@ import httpx
 from app.tools.budget_tool import run_budget_tool
 from app.tools.hotel_tool import load_hotels, run_hotel_tool
 from app.tools.weather_tool import run_weather_tool
-from app.tools.web_search_tool import run_web_search_tool
+from app.tools.web_search_tool import _build_duckduckgo_tool, run_web_search_tool
 
 
 def test_budget_tool_defaults_to_medium_when_missing():
@@ -21,6 +21,13 @@ def test_budget_tool_returns_low_medium_luxury_guidance():
     assert run_budget_tool("low")["guidance"]["activities"]
     assert run_budget_tool("medium")["guidance"]["activities"]
     assert run_budget_tool("luxury")["guidance"]["activities"]
+
+
+def test_budget_tool_maps_unlimited_to_luxury():
+    result = run_budget_tool("unlimited")
+
+    assert result["budget_level"] == "luxury"
+    assert result["status"] == "ok"
 
 
 def test_budget_tool_unknown_value_falls_back_to_medium():
@@ -226,3 +233,12 @@ def test_web_search_tool_search_error_returns_fallback():
     assert result["status"] == "fallback_search_error"
     assert result["source"] == "fallback"
     assert result["results"] == []
+
+
+def test_duckduckgo_tool_uses_html_backend_not_auto_wikipedia_engine():
+    tool = _build_duckduckgo_tool(count=3)
+
+    assert tool.api_wrapper.region == "us-en"
+    assert tool.api_wrapper.backend == "html"
+    assert tool.api_wrapper.time is None
+    assert tool.max_results == 3

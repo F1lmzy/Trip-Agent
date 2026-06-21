@@ -44,6 +44,12 @@ def test_parse_shoestring_budget_recognized_as_low():
     assert parsed.budget == "low"
 
 
+def test_parse_unlimited_budget_recognized_as_luxury():
+    parsed = parse_user_request("Plan a 3-day trip to Edinburgh with an unlimited budget.")
+
+    assert parsed.budget == "luxury"
+
+
 def test_missing_city_has_no_city():
     parsed = parse_user_request("Plan me a trip")
 

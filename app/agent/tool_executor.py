@@ -135,16 +135,30 @@ def attach_images(tool_outputs: dict[str, Any], services: AgentServices) -> None
         for item in attraction["results"]:
             if isinstance(item, dict) and "image_url" not in item:
                 name = item.get("name")
+                city = (
+                    item.get("city")
+                    if isinstance(item.get("city"), str)
+                    else (item.get("metadata") or {}).get("city")
+                    if isinstance(item.get("metadata"), dict)
+                    else None
+                )
                 if name:
-                    item["image_url"] = resolve_place_image(name, client=services.image_client)
+                    item["image_url"] = resolve_place_image(name, city=city, client=services.image_client)
 
     hotel = tool_outputs.get(ToolName.HOTEL)
     if isinstance(hotel, dict) and isinstance(hotel.get("results"), list):
         for item in hotel["results"]:
             if isinstance(item, dict) and "image_url" not in item:
                 name = item.get("name")
+                city = (
+                    item.get("city")
+                    if isinstance(item.get("city"), str)
+                    else (item.get("metadata") or {}).get("city")
+                    if isinstance(item.get("metadata"), dict)
+                    else None
+                )
                 if name:
-                    item["image_url"] = resolve_place_image(name, client=services.image_client)
+                    item["image_url"] = resolve_place_image(name, city=city, client=services.image_client)
 
 
 def fresh_travel_search_intent(parsed: ParsedRequest) -> str:

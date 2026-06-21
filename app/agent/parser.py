@@ -52,7 +52,7 @@ BUDGET_KEYWORDS = {
         "limited budget",
     ],
     "medium": ["moderate", "medium", "mid-range", "midrange"],
-    "luxury": ["luxury", "premium", "high-end", "expensive"],
+    "luxury": ["luxury", "premium", "high-end", "expensive", "unlimited budget", "unlimited", "no budget limit", "no budget cap"],
 }
 
 DIETARY_KEYWORDS = ["vegetarian", "vegan", "halal", "kosher", "gluten-free", "gluten free"]
@@ -243,8 +243,13 @@ def _extract_interests(normalized: str) -> list[str]:
 
 
 def _extract_budget(normalized: str) -> str | None:
-    for budget, keywords in BUDGET_KEYWORDS.items():
-        if _contains_any(normalized, keywords):
+    candidates = [
+        (keyword, budget)
+        for budget, keywords in BUDGET_KEYWORDS.items()
+        for keyword in keywords
+    ]
+    for keyword, budget in sorted(candidates, key=lambda item: len(item[0]), reverse=True):
+        if keyword in normalized:
             return budget
     return None
 

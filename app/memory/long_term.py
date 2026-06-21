@@ -34,6 +34,28 @@ class LongTermMemory:
         )
         return [result.document for result in results]
 
+    def delete_preferences_with_prefix(self, user_id: str, prefix: str, except_value: str | None = None) -> None:
+        """Delete stored preferences in one category for a user.
+
+        Long-term preferences are stored as add-only vector documents. For
+        mutually exclusive categories such as budget, replacing stale values
+        prevents old vectors like "Budget preference: low" from bleeding into
+        later requests that explicitly say "unlimited budget".
+        """
+        collection = self.vector_store.get_or_create_collection(PREFERENCES_COLLECTION)
+        existing = collection.get(where={"user_id": user_id}, include=["documents"])
+        ids = existing.get("ids") or []
+        documents = existing.get("documents") or []
+        ids_to_delete = [
+            doc_id
+            for doc_id, document in zip(ids, documents, strict=False)
+            if isinstance(document, str)
+            and document.startswith(prefix)
+            and (except_value is None or document != except_value)
+        ]
+        if ids_to_delete:
+            collection.delete(ids=ids_to_delete)
+
     def clear_preferences(self, user_id: str) -> None:
         collection = self.vector_store.get_or_create_collection(PREFERENCES_COLLECTION)
         existing = collection.get(where={"user_id": user_id})

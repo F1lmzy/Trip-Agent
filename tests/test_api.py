@@ -35,7 +35,7 @@ def test_health_returns_ok():
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "ok"
-    assert body["tools_available"] == 6
+    assert body["tools_available"] == 8
     assert body["mcp_endpoint"] == "/mcp"
     assert isinstance(body["openrouter_configured"], bool)
     assert isinstance(body["openweather_configured"], bool)
@@ -55,7 +55,7 @@ def test_chat_returns_response_shape(monkeypatch, tmp_path):
     install_test_long_term_memory(monkeypatch, tmp_path)
     install_test_agent_services(monkeypatch, tmp_path)
 
-    response = client.post("/chat", json={"user_id": "api-shape-user", "message": "Plan Tokyo"})
+    response = client.post("/chat", json={"user_id": "api-shape-user", "message": "Plan Tokyo with medium budget"})
 
     assert response.status_code == 200
     body = response.json()
@@ -118,11 +118,13 @@ def test_api_tools_lists_all_registered_tools():
         "attraction_rag_tool",
         "weather_tool",
         "budget_tool",
-        "hotel_tool",
-        "flight_tool",
+        "serpapi_hotel_tool",
+        "serpapi_flight_tool",
         "web_search_tool",
+        "destination_search_tool",
+        "wikimedia_image_tool",
     }
-    assert body["total"] == 6
+    assert body["total"] == 8
     assert all(tool["name"] for tool in body["tools"])
 
 
@@ -131,7 +133,7 @@ def test_chat_stream_emits_sse_events_with_result(monkeypatch, tmp_path):
     install_test_agent_services(monkeypatch, tmp_path)
 
     with client.stream(
-        "POST", "/chat/stream", json={"user_id": "stream-user", "message": "Plan Tokyo"}
+        "POST", "/chat/stream", json={"user_id": "stream-user", "message": "Plan Tokyo with medium budget"}
     ) as response:
         assert response.status_code == 200
         assert "text/event-stream" in response.headers["content-type"]

@@ -35,6 +35,7 @@ _IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff", ".gif")
 
 def resolve_place_image(
     place_name: str,
+    city: str | None = None,
     client: httpx.Client | None = None,
     timeout: float = _DEFAULT_TIMEOUT,
 ) -> str | None:
@@ -42,6 +43,8 @@ def resolve_place_image(
 
     Args:
         place_name: Place, attraction, or hotel name (e.g. "Eiffel Tower").
+        city: Optional city context used to disambiguate generic names like
+            "Old Town" or "Central Park".
         client: Optional httpx client for testability. If None, a transient
             client is created.
         timeout: Request timeout in seconds.
@@ -51,13 +54,17 @@ def resolve_place_image(
         suitable image is found or the request fails.
     """
     normalized = place_name.strip()
+    normalized_city = city.strip() if city else ""
     if not normalized:
         return None
+    search_query = normalized
+    if normalized_city and normalized_city.lower() not in normalized.lower():
+        search_query = f"{normalized} {normalized_city}"
 
     params = {
         "action": "query",
         "generator": "search",
-        "gsrsearch": normalized,
+        "gsrsearch": search_query,
         "gsrnamespace": "6",  # File namespace
         "gsrlimit": "8",
         "prop": "imageinfo",

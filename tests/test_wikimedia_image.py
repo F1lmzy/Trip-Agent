@@ -85,6 +85,19 @@ def _mock_client(payload: dict) -> httpx.Client:
     return httpx.Client(transport=httpx.MockTransport(handler))
 
 
+def test_resolve_place_image_adds_city_context_to_search_query():
+    seen_queries = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_queries.append(request.url.params["gsrsearch"])
+        return httpx.Response(200, json=_EMPTY_PAYLOAD)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    resolve_place_image("Old Town", city="Edinburgh", client=client)
+
+    assert seen_queries == ["Old Town Edinburgh"]
+
+
 def test_resolve_place_image_returns_thumburl_preferring_name_match():
     client = _mock_client(_SEARCH_PAYLOAD_EIFFEL)
     url = resolve_place_image("Eiffel Tower", client=client)

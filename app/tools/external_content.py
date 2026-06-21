@@ -221,9 +221,14 @@ def _parse_attractions_from_wikitext(wikitext: str, city: str) -> list[ExternalA
     """
     attractions: list[ExternalAttraction] = []
 
-    # Format 1: {{see | name=... | content=... }} and {{do | name=... | content=... }}
-    template_pattern = r"\{\{(see|do)\s*\n\| name=([^|]+)\|.*?\| content=([^}]+)\}\}"
-    for _template_type, name, content in re.findall(template_pattern, wikitext, flags=re.DOTALL):
+    # Format 1: {{see ...}} and {{do ...}} listings. Wikivoyage listing
+    # templates vary by city: fields may be inline, multi-line, or ordered
+    # differently, so parse fields by key instead of relying on one layout.
+    template_pattern = r"\{\{(see|do)\b(.*?)(?:\n\}\}|\}\})"
+    for _template_type, body in re.findall(template_pattern, wikitext, flags=re.IGNORECASE | re.DOTALL):
+        fields = _parse_listing_template_fields(body)
+        name = fields.get("name", "")
+        content = fields.get("content") or fields.get("description") or fields.get("alt") or ""
         clean_name = _clean_wikitext(name.strip())
         clean_content = _clean_wikitext(content.strip())
         if clean_name and len(clean_name) < 80:
@@ -244,8 +249,20 @@ def _parse_attractions_from_wikitext(wikitext: str, city: str) -> list[ExternalA
     return attractions
 
 
+def _parse_listing_template_fields(body: str) -> dict[str, str]:
+    """Extract Wikivoyage listing-template fields from a see/do body."""
+    fields: dict[str, str] = {}
+    field_pattern = r"\|\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)(?=\s+\|\s*[A-Za-z_][A-Za-z0-9_]*\s*=|\n\s*\|\s*[A-Za-z_][A-Za-z0-9_]*\s*=|$)"
+    for key, value in re.findall(field_pattern, body, flags=re.DOTALL):
+        fields[key.strip().lower()] = value.strip()
+    return fields
+
+
 def _clean_wikitext(text: str) -> str:
     """Strip wikitext markup from a string to produce readable plain text."""
+    # Remove external links: [https://example.com Display] -> Display.
+    text = re.sub(r"\[https?://[^\s\]]+\s+([^\]]+)\]", r"\1", text)
+    text = re.sub(r"\[https?://[^\]]+\]", "", text)
     # Remove wiki links: [[Article|Display]] -> Display, [[Article]] -> Article
     text = re.sub(r"\[\[[^]]*\|([^]]+)\]\]", r"\1", text)
     text = re.sub(r"\[\[([^]]+)\]\]", r"\1", text)
