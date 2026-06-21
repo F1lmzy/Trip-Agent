@@ -12,3 +12,4 @@ ddgs==9.14.4
 mcp==1.28.0
 faker==37.1.0
 serpapi==1.0.2
+airportsdata==20260315

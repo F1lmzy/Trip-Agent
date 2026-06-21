@@ -101,6 +101,52 @@ _ROUND_TRIP_PAYLOAD = {
     ],
 }
 
+_ROUND_TRIP_FLAT_PAYLOAD = {
+    "search_metadata": {"status": "Success"},
+    "best_flights": [
+        {
+            "type": "Round trip",
+            "price": 525,
+            "total_duration": 390,
+            "booking_link": "https://www.google.com/flights/rt/flat",
+            "departure_token": "outbound-token-123",
+            "flights": [
+                {
+                    "airline": "Singapore Airlines",
+                    "flight_number": "SQ 620",
+                    "departure_airport": {"name": "Singapore Changi Airport", "id": "SIN", "time": "2026-06-21T08:30:00"},
+                    "arrival_airport": {"name": "Kansai International Airport", "id": "KIX", "time": "2026-06-21T16:00:00"},
+                    "duration": 390,
+                    "airplane": "Boeing 787",
+                    "travel_class": "Economy",
+                }
+            ],
+        }
+    ],
+}
+
+_RETURN_FLAT_PAYLOAD = {
+    "search_metadata": {"status": "Success"},
+    "best_flights": [
+        {
+            "type": "Round trip",
+            "price": 525,
+            "total_duration": 410,
+            "flights": [
+                {
+                    "airline": "Singapore Airlines",
+                    "flight_number": "SQ 621",
+                    "departure_airport": {"name": "Kansai International Airport", "id": "KIX", "time": "2026-06-24T17:30:00"},
+                    "arrival_airport": {"name": "Singapore Changi Airport", "id": "SIN", "time": "2026-06-24T23:20:00"},
+                    "duration": 410,
+                    "airplane": "Boeing 787",
+                    "travel_class": "Economy",
+                }
+            ],
+        }
+    ],
+}
+
 _ONE_WAY_PAYLOAD = {
     "search_metadata": {"status": "Success"},
     "best_flights": [
@@ -210,6 +256,74 @@ def test_serpapi_flight_parses_round_trip():
     assert first["segments"][0]["airplane"] == "Airbus A320"
 
 
+def test_serpapi_flight_parses_round_trip_flat_payload_and_fetches_return_flights_with_token():
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        params = request.url.params
+        if "departure_token" in params:
+            assert params["departure_token"] == "outbound-token-123"
+            assert params["type"] == "1"
+            assert params["return_date"] == "2026-06-24"
+            assert params["departure_id"] == "SIN"
+            assert params["arrival_id"] == "KIX"
+            assert params["outbound_date"] == "2026-06-21"
+            return httpx.Response(200, json=_RETURN_FLAT_PAYLOAD)
+        assert params["departure_id"] == "SIN"
+        assert params["arrival_id"] == "KIX"
+        return httpx.Response(200, json=_ROUND_TRIP_FLAT_PAYLOAD)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = run_serpapi_flight_tool(
+        from_location="Singapore",
+        to_location="Osaka",
+        departure_date="2026-06-21",
+        return_date="2026-06-24",
+        api_key="fake-key",
+        client=client,
+    )
+
+    assert result["tool_name"] == "serpapi_flight_tool"
+    assert result["status"] == "ok"
+    assert result["departure_id"] == "SIN"
+    assert result["arrival_id"] == "KIX"
+    assert result["departure_token"] == "outbound-token-123"
+    departures = result["results"]["departure_flights"]
+    returns = result["results"]["return_flights"]
+    assert len(requests) == 2
+    assert len(departures) == 1
+    assert len(returns) == 1
+    assert departures[0]["flight_number"] == "SQ 620"
+    assert returns[0]["flight_number"] == "SQ 621"
+    assert departures[0]["from_airport"]["code"] == "SIN"
+    assert departures[0]["to_airport"]["code"] == "KIX"
+    assert returns[0]["from_airport"]["code"] == "KIX"
+    assert returns[0]["to_airport"]["code"] == "SIN"
+
+
+def test_serpapi_flight_keeps_outbound_when_return_token_lookup_fails():
+    def handler(request: httpx.Request) -> httpx.Response:
+        params = request.url.params
+        if "departure_token" in params:
+            return httpx.Response(400, json={"error": "Invalid departure_token"})
+        return httpx.Response(200, json=_ROUND_TRIP_FLAT_PAYLOAD)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = run_serpapi_flight_tool(
+        from_location="Singapore",
+        to_location="Osaka",
+        departure_date="2026-06-21",
+        return_date="2026-06-24",
+        api_key="fake-key",
+        client=client,
+    )
+
+    assert result["status"] == "ok"
+    assert result["results"]["departure_flights"]
+    assert result["results"]["return_flights"] == []
+
+
 def test_serpapi_flight_parses_one_way():
     client = _mock_flight_client(_ONE_WAY_PAYLOAD)
     result = run_serpapi_flight_tool(
@@ -249,7 +363,7 @@ def test_serpapi_flight_no_key_degrades_to_no_results():
 def test_serpapi_flight_unmapped_city_degrades():
     client = _mock_flight_client(_ROUND_TRIP_PAYLOAD)
     result = run_serpapi_flight_tool(
-        from_location="Mars",
+        from_location="Atlantis",
         to_location="Paris",
         departure_date="2024-10-01",
         api_key="fake-key",
@@ -257,7 +371,7 @@ def test_serpapi_flight_unmapped_city_degrades():
     )
 
     assert result["status"] == "no_results"
-    assert result["reason"] == "departure_city_not_mapped"
+    assert result["reason"] == "departure_city_not_resolved"
 
 
 def test_serpapi_flight_api_error_degrades():

@@ -92,9 +92,11 @@ def run_hotel(parsed: ParsedRequest, services: AgentServices) -> dict[str, Any]:
 
 
 def run_flight(parsed: ParsedRequest, services: AgentServices) -> dict[str, Any]:
-    """Run the SerpAPI flight tool, falling back to the mock tool.
+    """Run real SerpAPI flights when configured, else local mock flights.
 
-    Same key-gating and fallback semantics as ``run_hotel``.
+    If a SerpAPI key is configured, return the SerpAPI result even for
+    no-results/error responses. Falling back to mock data after a live SerpAPI
+    failure makes the API look successful with fake flights.
     """
     key = service_value(services, "serpapi_api_key", "serpapi_api_key")
     departure_date = resolve_departure_date(parsed)
@@ -111,8 +113,7 @@ def run_flight(parsed: ParsedRequest, services: AgentServices) -> dict[str, Any]
             api_key=key,
             client=services.serpapi_client,
         )
-        if result.get("status") == "ok":
-            return result
+        return result
     return run_flight_tool(
         from_location=parsed.origin_city,
         to_location=parsed.city,
@@ -170,9 +171,11 @@ def resolve_departure_date(parsed: ParsedRequest) -> str:
     """Resolve an ISO departure date.
 
     Priority: an explicit departure_date parsed from the message (e.g.
-    'from June 21 to June 25'), then the first date in parsed.dates, else today.
+    'from June 21 to June 25'), then the first date in parsed.dates, else
+    tomorrow. Google Flights can reject same-day searches depending on timezone,
+    so undated flight requests use the next day rather than today.
     """
-    from datetime import date, datetime
+    from datetime import date, datetime, timedelta
 
     if parsed.departure_date:
         return parsed.departure_date
@@ -184,7 +187,7 @@ def resolve_departure_date(parsed: ParsedRequest) -> str:
                 return parsed_date.isoformat()
             except ValueError:
                 pass
-    return date.today().isoformat()
+    return (date.today() + timedelta(days=1)).isoformat()
 
 
 def resolve_return_date(parsed: ParsedRequest, duration_days: int) -> str | None:

@@ -3,17 +3,19 @@
 Asserts the iteration-3 contract:
   (a) with a SerpAPI key + ok response -> SerpAPI tool used, mock not called;
   (b) without a key -> mock tool used, SerpAPI not called;
-  (c) SerpAPI no_results/error -> falls back to mock;
+  (c) SerpAPI no_results/error is surfaced instead of hidden by fake mock flights;
   (d) Wikimedia image_url is attached to attraction and hotel results.
 
 All HTTP is mocked via httpx.MockTransport — no real network, no SerpAPI quota.
 """
 
+from datetime import date, timedelta
+
 import httpx
 
 from app.agent.orchestrator import AgentServices
 from app.agent.parser import ParsedRequest
-from app.agent.tool_executor import attach_images, run_flight, run_hotel
+from app.agent.tool_executor import attach_images, resolve_departure_date, run_flight, run_hotel
 from app.tools.serpapi_flight_tool import run_serpapi_flight_tool
 from app.tools.serpapi_hotel_tool import run_serpapi_hotel_tool
 from tests.fakes import FakeImageClient
@@ -218,6 +220,12 @@ def test_run_flight_round_trip_produces_return_flights():
     assert result["results"]["return_flights"], "round-trip must produce return flights"
 
 
+def test_resolve_departure_date_defaults_undated_flights_to_tomorrow():
+    parsed = _parsed(city="Osaka", origin_city="Singapore", budget="luxury", duration_days=3)
+
+    assert resolve_departure_date(parsed) == (date.today() + timedelta(days=1)).isoformat()
+
+
 def test_run_flight_uses_explicit_date_range():
     # 'from June 21 to June 25' must honor those exact dates for outbound and
     # return flights, not duration_days-based computation.
@@ -259,7 +267,7 @@ def test_run_flight_explicit_dates_override_duration():
     assert ret["departure"].startswith("2026-06-25")
 
 
-def test_run_flight_falls_back_to_mock_on_serpapi_error():
+def test_run_flight_returns_serpapi_error_without_mock_fallback_when_key_present():
     parsed = _parsed(city="Tokyo", origin_city="London", budget="medium", duration_days=2)
     services = AgentServices(
         serpapi_api_key="fake-key",
@@ -269,8 +277,9 @@ def test_run_flight_falls_back_to_mock_on_serpapi_error():
     )
 
     result = run_flight(parsed, services)
-    assert result["tool_name"] == "flight_tool"  # mock fallback
-    assert result["status"] == "ok"
+    assert result["tool_name"] == "serpapi_flight_tool"
+    assert result["status"] == "error"
+    assert result["results"]["departure_flights"] == []
 
 
 # --- Image attachment ---

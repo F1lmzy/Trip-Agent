@@ -3,6 +3,7 @@ import httpx
 
 from app.tools.budget_tool import run_budget_tool
 from app.tools.hotel_tool import load_hotels, run_hotel_tool
+from app.tools.serpapi_flight_tool import run_serpapi_flight_tool
 from app.tools.weather_tool import run_weather_tool
 from app.tools.web_search_tool import _build_duckduckgo_tool, run_web_search_tool
 
@@ -242,3 +243,195 @@ def test_duckduckgo_tool_uses_html_backend_not_auto_wikipedia_engine():
     assert tool.api_wrapper.backend == "html"
     assert tool.api_wrapper.time is None
     assert tool.max_results == 3
+
+
+def test_serpapi_flight_tool_uses_one_way_type_and_real_airport_codes():
+    def handler(request: httpx.Request) -> httpx.Response:
+        params = request.url.params
+        assert params["engine"] == "google_flights"
+        assert params["departure_id"] == "JFK"
+        assert params["arrival_id"] == "LAX"
+        assert params["type"] == "2"
+        assert "return_date" not in params
+        assert "stops" not in params
+        return httpx.Response(
+            200,
+            json={
+                "best_flights": [
+                    {
+                        "price": 349,
+                        "type": "One way",
+                        "total_duration": 372,
+                        "flights": [
+                            {
+                                "flight_number": "B6 923",
+                                "airline": "JetBlue",
+                                "departure_airport": {"id": "JFK", "name": "John F. Kennedy International Airport"},
+                                "arrival_airport": {"id": "LAX", "name": "Los Angeles International Airport"},
+                                "departure_time": "2026-06-28 07:00",
+                                "arrival_time": "2026-06-28 10:12",
+                                "duration": 372,
+                            }
+                        ],
+                    }
+                ]
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = run_serpapi_flight_tool(
+        "New York",
+        "Los Angeles",
+        "2026-06-28",
+        api_key="test-key",
+        client=client,
+    )
+
+    assert result["status"] == "ok"
+    flight = result["results"]["departure_flights"][0]
+    assert flight["airline"] == "JetBlue"
+    assert flight["price"] == 349.0
+    assert flight["from_airport"]["code"] == "JFK"
+    assert flight["to_airport"]["code"] == "LAX"
+
+
+def test_serpapi_flight_tool_resolves_cities_outside_curated_map_with_airport_database():
+    def handler(request: httpx.Request) -> httpx.Response:
+        params = request.url.params
+        assert params["departure_id"] == "AUS"
+        assert params["arrival_id"] == "PEK"
+        assert params["type"] == "2"
+        return httpx.Response(
+            200,
+            json={
+                "best_flights": [
+                    {
+                        "price": 900,
+                        "type": "One way",
+                        "total_duration": 1000,
+                        "flights": [
+                            {
+                                "flight_number": "AA 1",
+                                "airline": "American",
+                                "departure_airport": {"id": "AUS", "name": "Austin-Bergstrom International Airport"},
+                                "arrival_airport": {"id": "PEK", "name": "Beijing Capital International Airport"},
+                                "departure_time": "2026-06-28 07:00",
+                                "arrival_time": "2026-06-29 10:00",
+                                "duration": 1000,
+                            }
+                        ],
+                    }
+                ]
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = run_serpapi_flight_tool(
+        "Austin",
+        "Beijing",
+        "2026-06-28",
+        api_key="test-key",
+        client=client,
+    )
+
+    assert result["status"] == "ok"
+    assert result["departure_id"] == "AUS"
+    assert result["arrival_id"] == "PEK"
+
+
+def test_serpapi_flight_tool_accepts_direct_iata_codes():
+    def handler(request: httpx.Request) -> httpx.Response:
+        params = request.url.params
+        assert params["departure_id"] == "SFO"
+        assert params["arrival_id"] == "KIX"
+        return httpx.Response(
+            200,
+            json={
+                "best_flights": [
+                    {
+                        "price": 700,
+                        "type": "One way",
+                        "flights": [
+                            {
+                                "flight_number": "UA 35",
+                                "airline": "United",
+                                "departure_airport": {"id": "SFO", "name": "San Francisco International Airport"},
+                                "arrival_airport": {"id": "KIX", "name": "Kansai International Airport"},
+                                "duration": 690,
+                            }
+                        ],
+                    }
+                ]
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = run_serpapi_flight_tool("sfo", "kix", "2026-06-28", api_key="test-key", client=client)
+
+    assert result["status"] == "ok"
+    assert result["departure_id"] == "SFO"
+    assert result["arrival_id"] == "KIX"
+
+
+def test_serpapi_flight_tool_uses_round_trip_type_when_return_date_present():
+    def handler(request: httpx.Request) -> httpx.Response:
+        params = request.url.params
+        assert params["type"] == "1"
+        assert params["return_date"] == "2026-07-01"
+        return httpx.Response(
+            200,
+            json={
+                "best_flights": [
+                    {
+                        "price": 591,
+                        "type": "Round trip",
+                        "departures": [
+                            {
+                                "total_duration": 372,
+                                "flights": [
+                                    {
+                                        "flight_number": "B6 923",
+                                        "airline": "JetBlue",
+                                        "departure_airport": {"id": "JFK", "name": "John F. Kennedy International Airport"},
+                                        "arrival_airport": {"id": "LAX", "name": "Los Angeles International Airport"},
+                                        "departure_time": "2026-06-28 07:00",
+                                        "arrival_time": "2026-06-28 10:12",
+                                        "duration": 372,
+                                    }
+                                ],
+                            }
+                        ],
+                        "returns": [
+                            {
+                                "total_duration": 340,
+                                "flights": [
+                                    {
+                                        "flight_number": "B6 524",
+                                        "airline": "JetBlue",
+                                        "departure_airport": {"id": "LAX", "name": "Los Angeles International Airport"},
+                                        "arrival_airport": {"id": "JFK", "name": "John F. Kennedy International Airport"},
+                                        "departure_time": "2026-07-01 13:00",
+                                        "arrival_time": "2026-07-01 21:40",
+                                        "duration": 340,
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ]
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = run_serpapi_flight_tool(
+        "New York",
+        "Los Angeles",
+        "2026-06-28",
+        return_date="2026-07-01",
+        api_key="test-key",
+        client=client,
+    )
+
+    assert result["status"] == "ok"
+    assert result["results"]["departure_flights"]
+    assert result["results"]["return_flights"]

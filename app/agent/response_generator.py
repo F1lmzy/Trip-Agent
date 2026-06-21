@@ -598,8 +598,22 @@ def _structured_hotels(tool_outputs: dict[str, Any]) -> list[dict[str, Any]]:
 def _structured_flights(tool_outputs: dict[str, Any]) -> dict[str, Any]:
     """Build a structured flights section from the flight tool output."""
     flight = tool_outputs.get("flight_tool", {})
+    if not flight:
+        return {"status": "not_run", "departure_flights": [], "return_flights": []}
     if flight.get("status") != "ok":
-        return {"status": flight.get("status", "not_run"), "departure_flights": [], "return_flights": []}
+        return {
+            "status": flight.get("status", "not_run"),
+            "message": flight.get("message"),
+            "reason": flight.get("reason"),
+            "from_location": flight.get("from_location"),
+            "to_location": flight.get("to_location"),
+            "departure_date": flight.get("departure_date"),
+            "return_date": flight.get("return_date"),
+            "departure_id": flight.get("departure_id"),
+            "arrival_id": flight.get("arrival_id"),
+            "departure_flights": [],
+            "return_flights": [],
+        }
     results = flight.get("results", {}) or {}
     return {
         "status": "ok",
@@ -607,6 +621,8 @@ def _structured_flights(tool_outputs: dict[str, Any]) -> dict[str, Any]:
         "to_location": flight.get("to_location"),
         "departure_date": flight.get("departure_date"),
         "return_date": flight.get("return_date"),
+        "departure_id": flight.get("departure_id"),
+        "arrival_id": flight.get("arrival_id"),
         "departure_flights": results.get("departure_flights", []) or [],
         "return_flights": results.get("return_flights", []) or [],
     }

@@ -6,8 +6,8 @@ is testable with ``httpx.MockTransport`` (the repo's established test pattern).
 The ``serpapi`` SDK is kept as the canonical service dependency, but the REST
 endpoint is called directly so there is a single, mockable HTTP code path.
 
-Gracefully degrades when ``SERPAPI_API_KEY`` is missing or the city is not
-mapped to an IATA code — never crashes, never serves junk. The returned shape
+Gracefully degrades when ``SERPAPI_API_KEY`` is missing or a city cannot be
+resolved to an IATA code — never crashes, never serves junk. The returned shape
 mirrors ``app.tools.flight_tool.run_flight_tool`` (``results`` with
 ``departure_flights`` / ``return_flights`` lists) so the orchestrator can treat
 mock and real flight tools interchangeably.
@@ -16,7 +16,8 @@ mock and real flight tools interchangeably.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+import re
+from functools import lru_cache
 from typing import Any
 
 import httpx
@@ -29,24 +30,89 @@ logger = logging.getLogger(__name__)
 _SERPAPI_ENDPOINT = "https://serpapi.com/search"
 _DEFAULT_TIMEOUT = 30.0
 
-# City/city-group IATA codes accepted by SerpAPI google_flights departure_id /
-# arrival_id. Intentionally a small, curated set; unmapped cities degrade to
-# no_results rather than guessing a wrong airport code.
+# Preferred airports for ambiguous multi-airport cities and common tourist
+# places whose nearest practical airport is in a neighboring city. The dynamic
+# resolver below handles the broad world airport database; these entries keep
+# high-traffic ambiguous prompts stable and avoid SerpAPI-rejected city codes
+# such as NYC, LON, TYO, CHI, etc.
 _CITY_TO_IATA: dict[str, str] = {
-    "London": "LON", "Paris": "PAR", "New York": "NYC", "Tokyo": "TYO",
-    "Rome": "ROM", "Madrid": "MAD", "Barcelona": "BCN", "Amsterdam": "AMS",
+    "London": "LHR", "Paris": "CDG", "New York": "JFK", "Tokyo": "NRT",
+    "Rome": "FCO", "Madrid": "MAD", "Barcelona": "BCN", "Amsterdam": "AMS",
     "Berlin": "BER", "Munich": "MUC", "Dublin": "DUB", "Edinburgh": "EDI",
     "Manchester": "MAN", "Liverpool": "LPL", "Newcastle Upon Tyne": "NCL",
     "Newcastle": "NCL", "Lisbon": "LIS", "Vienna": "VIE", "Prague": "PRG",
-    "Budapest": "BUD", "Stockholm": "STO", "Copenhagen": "CPH", "Oslo": "OSL",
-    "Helsinki": "HEL", "Zurich": "ZRH", "Geneva": "GVA", "Milan": "MIL",
+    "Budapest": "BUD", "Stockholm": "ARN", "Copenhagen": "CPH", "Oslo": "OSL",
+    "Helsinki": "HEL", "Zurich": "ZRH", "Geneva": "GVA", "Milan": "MXP",
     "Florence": "FLR", "Venice": "VCE", "Naples": "NAP", "Athens": "ATH",
-    "Istanbul": "IST", "Dubai": "DXB", "Singapore": "SIN", "Bangkok": "BKK",
+    "Istanbul": "IST", "Dubai": "DXB", "Singapore": "SIN", "Bangkok": "BKK", "Osaka": "KIX",
     "Hong Kong": "HKG", "Seoul": "ICN", "Sydney": "SYD", "Melbourne": "MEL",
-    "Toronto": "YTO", "Vancouver": "YVR", "Los Angeles": "LAX",
-    "San Francisco": "SFO", "Chicago": "CHI", "Boston": "BOS",
-    "Washington": "WAS", "Miami": "MIA", "Seattle": "SEA", "Las Vegas": "LAS",
+    "Toronto": "YYZ", "Vancouver": "YVR", "Los Angeles": "LAX",
+    "San Francisco": "SFO", "Chicago": "ORD", "Boston": "BOS",
+    "Washington": "DCA", "Miami": "MIA", "Seattle": "SEA", "Las Vegas": "LAS",
+    "Kyoto": "KIX", "Oxford": "LHR", "Cambridge": "STN", "Anaheim": "LAX",
 }
+
+
+@lru_cache(maxsize=1)
+def _airport_index() -> dict[str, dict[str, Any]]:
+    try:
+        import airportsdata
+
+        return airportsdata.load("IATA")
+    except Exception as error:  # noqa: BLE001 - optional resolver dependency
+        logger.warning("Airport database unavailable; falling back to curated city map: %s", error)
+        return {}
+
+
+def _resolve_iata_code(location: str) -> str | None:
+    """Resolve a city/airport prompt to a SerpAPI-compatible airport IATA code.
+
+    SerpAPI Google Flights accepts real airport IATA codes, not broad city codes
+    such as NYC or LON. This resolver first honors explicit IATA prompts and the
+    curated ambiguity map, then falls back to the bundled airportsdata database
+    so cities outside the hand-maintained list (Austin, Beijing, Osaka, etc.)
+    work without adding entries one by one.
+    """
+    cleaned = " ".join(location.replace(",", " ").split()).strip()
+    if not cleaned:
+        return None
+
+    airports = _airport_index()
+    explicit_code = cleaned.upper()
+    if len(explicit_code) == 3 and explicit_code in airports:
+        return explicit_code
+
+    normalized = _normalize_location(cleaned)
+    if normalized in _CITY_TO_IATA:
+        return _CITY_TO_IATA[normalized]
+
+    query = normalized.casefold()
+    matches: list[tuple[int, str]] = []
+    for code, airport in airports.items():
+        city = str(airport.get("city") or "").casefold()
+        name = str(airport.get("name") or "").casefold()
+        if city == query:
+            matches.append((_airport_score(airport, exact_city=True), code))
+        elif re.search(rf"\b{re.escape(query)}\b", name):
+            matches.append((_airport_score(airport, exact_city=False), code))
+
+    if not matches:
+        return None
+
+    matches.sort(key=lambda item: (-item[0], item[1]))
+    return matches[0][1]
+
+
+def _airport_score(airport: dict[str, Any], exact_city: bool) -> int:
+    name = str(airport.get("name") or "").casefold()
+    score = 100 if exact_city else 40
+    if "international" in name:
+        score += 30
+    if any(term in name for term in ("capital", "heathrow", "kennedy", "dulles", "major")):
+        score += 10
+    if any(term in name for term in ("municipal", "regional", "county", "airpark", "heliport", "seaplane")):
+        score -= 25
+    return score
 
 
 def run_serpapi_flight_tool(
@@ -63,8 +129,8 @@ def run_serpapi_flight_tool(
     """Search real flights via SerpAPI Google Flights.
 
     Args:
-        from_location: Departure city (must be in the city->IATA map).
-        to_location: Destination city (must be in the city->IATA map).
+        from_location: Departure city or IATA airport code.
+        to_location: Destination city or IATA airport code.
         departure_date: ISO date string (YYYY-MM-DD).
         return_date: Optional return ISO date string (YYYY-MM-DD).
         budget: Optional budget level (low/medium/luxury); used only to tag the
@@ -87,12 +153,12 @@ def run_serpapi_flight_tool(
     if not key:
         return _no_results(normalized_from, normalized_to, reason="serpapi_key_missing")
 
-    from_code = _CITY_TO_IATA.get(normalized_from)
-    to_code = _CITY_TO_IATA.get(normalized_to)
+    from_code = _resolve_iata_code(normalized_from)
+    to_code = _resolve_iata_code(normalized_to)
     if not from_code:
-        return _no_results(normalized_from, normalized_to, reason="departure_city_not_mapped")
+        return _no_results(normalized_from, normalized_to, reason="departure_city_not_resolved")
     if not to_code:
-        return _no_results(normalized_from, normalized_to, reason="destination_city_not_mapped")
+        return _no_results(normalized_from, normalized_to, reason="destination_city_not_resolved")
 
     params = {
         "engine": "google_flights",
@@ -103,11 +169,13 @@ def run_serpapi_flight_tool(
         "outbound_date": departure_date,
         "currency": "USD",
         "adults": str(adults),
-        "stops": "1",
         "api_key": key,
     }
     if return_date:
+        params["type"] = "1"
         params["return_date"] = return_date
+    else:
+        params["type"] = "2"
 
     try:
         owns_client = client is None
@@ -116,19 +184,28 @@ def run_serpapi_flight_tool(
             response = http_client.get(_SERPAPI_ENDPOINT, params=params)
             response.raise_for_status()
             payload = response.json()
+            if payload.get("error"):
+                return _error_result(normalized_from, normalized_to, str(payload["error"]), departure_date, return_date, from_code, to_code)
+
+            departure_flights, return_flights = _parse_flights_payload(payload, return_date is not None)
+            departure_token = _first_departure_token(payload)
+            if return_date and departure_flights and not return_flights and departure_token:
+                fetched_returns = _fetch_return_flights(
+                    http_client=http_client,
+                    base_params=params,
+                    departure_token=departure_token,
+                )
+                if fetched_returns is not None:
+                    return_flights = fetched_returns
         finally:
             if owns_client:
                 http_client.close()
     except httpx.HTTPError as error:
-        return _error_result(normalized_from, normalized_to, f"serpapi_request_failed: {error}")
+        return _error_result(normalized_from, normalized_to, f"serpapi_request_failed: {error}", departure_date, return_date, from_code, to_code)
     except Exception as error:  # noqa: BLE001 - defensive: never crash the agent
         logger.warning("SerpAPI flight search failed unexpectedly: %s", error)
-        return _error_result(normalized_from, normalized_to, f"serpapi_unexpected: {error}")
+        return _error_result(normalized_from, normalized_to, f"serpapi_unexpected: {error}", departure_date, return_date, from_code, to_code)
 
-    if payload.get("error"):
-        return _error_result(normalized_from, normalized_to, str(payload["error"]))
-
-    departure_flights, return_flights = _parse_flights_payload(payload, return_date is not None)
     if not departure_flights:
         return _no_results(normalized_from, normalized_to, reason="no_flights_in_response")
 
@@ -140,11 +217,62 @@ def run_serpapi_flight_tool(
         "departure_date": departure_date,
         "return_date": return_date,
         "budget_level": budget_level,
+        "departure_id": from_code,
+        "arrival_id": to_code,
+        "departure_token": departure_token,
         "results": {
             "departure_flights": departure_flights,
             "return_flights": return_flights,
         },
     }
+
+
+def _first_departure_token(payload: dict[str, Any]) -> str | None:
+    for key in ("best_flights", "other_flights"):
+        for offer in payload.get(key) or []:
+            if isinstance(offer, dict) and offer.get("departure_token"):
+                return str(offer["departure_token"])
+    return None
+
+
+def _fetch_return_flights(
+    http_client: httpx.Client,
+    base_params: dict[str, Any],
+    departure_token: str,
+) -> list[dict] | None:
+    """Fetch SerpAPI's second-step return flights for a selected outbound.
+
+    SerpAPI's first round-trip request often returns only outbound choices plus
+    a departure_token. Per SerpAPI docs, return flight options require a second
+    request with that token. If the token lookup fails, keep the outbound
+    results instead of converting the whole flight section to an error.
+    """
+    full_token_params = dict(base_params)
+    full_token_params["departure_token"] = departure_token
+    compact_token_params = {
+        key: value
+        for key, value in full_token_params.items()
+        if key not in {"departure_id", "arrival_id", "outbound_date"}
+    }
+
+    for token_params in (full_token_params, compact_token_params):
+        try:
+            response = http_client.get(_SERPAPI_ENDPOINT, params=token_params)
+            response.raise_for_status()
+            payload = response.json()
+        except httpx.HTTPError as error:
+            logger.warning("SerpAPI return flight token lookup failed: %s", error)
+            continue
+
+        if payload.get("error"):
+            logger.warning("SerpAPI return flight lookup failed: %s", payload["error"])
+            continue
+
+        return_flights, _ = _parse_flights_payload(payload, is_round_trip=False)
+        if return_flights:
+            return return_flights
+
+    return None
 
 
 def _parse_flights_payload(payload: dict[str, Any], is_round_trip: bool) -> tuple[list[dict], list[dict]]:
@@ -174,7 +302,13 @@ def _parse_flights_payload(payload: dict[str, Any], is_round_trip: bool) -> tupl
                 flight = _parse_leg(leg, offer)
                 if flight:
                     return_flights.append(flight)
-        elif "flights" in offer:
+            continue
+
+        # SerpAPI's documented google_flights response uses a flat "flights"
+        # list even when return_date/type=1 are present. Treat that as the
+        # outbound leg rather than returning no_results and triggering mock
+        # fallback in the orchestrator.
+        if "flights" in offer:
             flight = _parse_leg(offer, offer)
             if flight:
                 departure_flights.append(flight)
@@ -272,12 +406,24 @@ def _no_results(from_location: str, to_location: str, reason: str) -> dict[str, 
     }
 
 
-def _error_result(from_location: str, to_location: str, message: str) -> dict[str, Any]:
+def _error_result(
+    from_location: str,
+    to_location: str,
+    message: str,
+    departure_date: str | None = None,
+    return_date: str | None = None,
+    departure_id: str | None = None,
+    arrival_id: str | None = None,
+) -> dict[str, Any]:
     return {
         "tool_name": "serpapi_flight_tool",
         "status": "error",
         "from_location": from_location,
         "to_location": to_location,
+        "departure_date": departure_date,
+        "return_date": return_date,
+        "departure_id": departure_id,
+        "arrival_id": arrival_id,
         "message": message,
         "results": {"departure_flights": [], "return_flights": []},
     }
