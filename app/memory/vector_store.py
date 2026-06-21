@@ -2,6 +2,8 @@ import logging
 from typing import Any, Protocol
 from uuid import uuid4
 
+logger = logging.getLogger(__name__)
+
 import chromadb
 from chromadb.config import Settings as ChromaSettings
 from pydantic import BaseModel, Field
@@ -89,6 +91,7 @@ class VectorStore:
         try:
             self._client.delete_collection(name=collection_name)
         except ValueError:
+            logger.debug("delete_collection: collection %r not found (ignored)", collection_name)
             return
 
     def _embed(self, texts: list[str]) -> list[list[float]]:

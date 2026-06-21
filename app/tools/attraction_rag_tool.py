@@ -52,10 +52,17 @@ def has_curated_rag_city(city: str) -> bool:
 class AttractionRagTool:
     def __init__(self, vector_store: VectorStore | None = None) -> None:
         self.vector_store = vector_store or VectorStore()
+        self._seeded = False
 
     def seed(self) -> None:
         self._seed_city_docs()
         self._seed_attractions()
+
+    def seed_if_needed(self) -> None:
+        """Seed the vector store exactly once. Idempotent — safe to call repeatedly."""
+        if not self._seeded:
+            self.seed()
+            self._seeded = True
 
     def run(
         self,
@@ -67,6 +74,40 @@ class AttractionRagTool:
         normalized_city = _normalize_city(city)
         interest_terms = " ".join(interests or ["highlights"])
 
+        hop_1 = self._run_hop1(normalized_city, http_client)
+        if isinstance(hop_1, dict):
+            return hop_1  # early exit — no city context found
+        hop_1_results, city_context = hop_1
+
+        hop_2_results = self._run_hop2(
+            normalized_city, interest_terms, city_context, hop_1_results, limit, http_client,
+        )
+
+        if not hop_2_results:
+            return AttractionRagResult(
+                status="no_results",
+                city=normalized_city,
+                rag_trace={"hop_1": _summarize_results(hop_1_results), "hop_2": []},
+            ).model_dump()
+
+        return AttractionRagResult(
+            status="ok",
+            city=normalized_city,
+            results=[self._result_to_attraction(result, interests or []) for result in hop_2_results],
+            rag_trace={
+                "hop_1": _summarize_results(hop_1_results),
+                "hop_2": _summarize_results(hop_2_results),
+            },
+        ).model_dump()
+
+    def _run_hop1(
+        self, normalized_city: str, http_client: httpx.Client | None,
+    ) -> tuple[list[VectorSearchResult], str] | dict[str, Any]:
+        """Retrieve city-level context from the vector store.
+
+        Returns a ``(hop_1_results, city_context)`` tuple on success, or an
+        ``AttractionRagResult`` dict (early exit) when no context is found.
+        """
         hop_1_query = f"{normalized_city} major neighborhoods attractions food museums nature travel overview"
         hop_1_results = self.vector_store.query(
             CITY_DOCS_COLLECTION,
@@ -102,6 +143,23 @@ class AttractionRagTool:
             return AttractionRagResult(status="no_results", city=normalized_city).model_dump()
 
         city_context = " ".join(result.document for result in hop_1_results[:2])
+        return hop_1_results, city_context
+
+    def _run_hop2(
+        self,
+        normalized_city: str,
+        interest_terms: str,
+        city_context: str,
+        hop_1_results: list[VectorSearchResult],
+        limit: int,
+        http_client: httpx.Client | None,
+    ) -> list[VectorSearchResult]:
+        """Retrieve interest-specific attractions using the city context.
+
+        Handles stale external name detection, re-ingestion, and fallback
+        ingest when hop_2 is empty but hop_1 came from external sources.
+        Returns a list of results (may be empty).
+        """
         hop_2_query = f"{normalized_city} {interest_terms} {city_context}"
         hop_2_results = self.vector_store.query(
             ATTRACTIONS_COLLECTION,
@@ -132,22 +190,7 @@ class AttractionRagTool:
                 where={"city": normalized_city},
             )
 
-        if not hop_2_results:
-            return AttractionRagResult(
-                status="no_results",
-                city=normalized_city,
-                rag_trace={"hop_1": _summarize_results(hop_1_results), "hop_2": []},
-            ).model_dump()
-
-        return AttractionRagResult(
-            status="ok",
-            city=normalized_city,
-            results=[self._result_to_attraction(result, interests or []) for result in hop_2_results],
-            rag_trace={
-                "hop_1": _summarize_results(hop_1_results),
-                "hop_2": _summarize_results(hop_2_results),
-            },
-        ).model_dump()
+        return hop_2_results
 
     def _ingest_external_city_docs(
         self,

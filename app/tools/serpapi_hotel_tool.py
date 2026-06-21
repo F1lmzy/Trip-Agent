@@ -13,9 +13,12 @@ on each result for the upcoming front-end image rendering.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 from app.config import get_settings
 from app.tools.budget_tool import _normalize_budget
@@ -98,6 +101,7 @@ def run_serpapi_hotel_tool(
     except httpx.HTTPError as error:
         return _error_result(normalized_city, f"serpapi_request_failed: {error}")
     except Exception as error:  # noqa: BLE001 - defensive: never crash the agent
+        logger.warning("SerpAPI hotel search failed unexpectedly: %s", error)
         return _error_result(normalized_city, f"serpapi_unexpected: {error}")
 
     if payload.get("error"):

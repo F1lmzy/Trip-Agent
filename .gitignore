@@ -7,3 +7,5 @@ chroma_db/
 .DS_Store
 .coverage
 htmlcov/
+
+.repro_chroma/

@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 
 from app.agent.parser import ParsedRequest
+from app.agent.tool_names import ToolName
 
 
 CORE_PLAN_STEPS = [
@@ -33,7 +34,7 @@ def create_trip_plan(parsed: ParsedRequest, rag_context_is_weak: bool = False) -
     if parsed.is_follow_up and parsed.city is None:
         return _plan_follow_up(parsed)
 
-    selected_tools = ["attraction_rag_tool", "weather_tool", "budget_tool"]
+    selected_tools = [ToolName.ATTRACTION_RAG, ToolName.WEATHER, ToolName.BUDGET]
     assumptions: list[str] = []
     plan = list(CORE_PLAN_STEPS)
 
@@ -41,15 +42,15 @@ def create_trip_plan(parsed: ParsedRequest, rag_context_is_weak: bool = False) -
         assumptions.append("Budget not provided; defaulting to medium for this itinerary.")
 
     if parsed.asks_for_current_info or rag_context_is_weak:
-        selected_tools.append("web_search_tool")
+        selected_tools.append(ToolName.WEB_SEARCH)
         plan.append("Search the web for fresh travel context")
 
     if parsed.asks_for_hotel:
-        selected_tools.append("hotel_tool")
+        selected_tools.append(ToolName.HOTEL)
         plan.append("Retrieve hotel recommendations")
 
     if parsed.asks_for_flights and parsed.origin_city:
-        selected_tools.append("flight_tool")
+        selected_tools.append(ToolName.FLIGHT)
         plan.append("Suggest flights from origin to destination")
 
     plan.extend(
@@ -75,7 +76,7 @@ def _plan_follow_up(parsed: ParsedRequest) -> PlanningResult:
                 "Apply lower-budget constraints",
                 "Regenerate the itinerary with cheaper options",
             ],
-            selected_tools=["budget_tool"],
+            selected_tools=[ToolName.BUDGET],
         )
 
     if parsed.follow_up_intent == "more_indoor":
@@ -86,7 +87,7 @@ def _plan_follow_up(parsed: ParsedRequest) -> PlanningResult:
                 "Use weather context if relevant",
                 "Regenerate the itinerary with more indoor options",
             ],
-            selected_tools=["attraction_rag_tool", "weather_tool"],
+            selected_tools=[ToolName.ATTRACTION_RAG, ToolName.WEATHER],
         )
 
     if parsed.follow_up_intent == "more_museums":
@@ -96,7 +97,7 @@ def _plan_follow_up(parsed: ParsedRequest) -> PlanningResult:
                 "Find additional museum options",
                 "Regenerate the itinerary with more museums",
             ],
-            selected_tools=["attraction_rag_tool"],
+            selected_tools=[ToolName.ATTRACTION_RAG],
         )
 
     return PlanningResult(

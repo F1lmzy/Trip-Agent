@@ -1,8 +1,10 @@
+import logging
 from typing import Any, Protocol
+
+logger = logging.getLogger(__name__)
 
 
 class SearchTool(Protocol):
-    def invoke(self, query: str) -> Any:
         ...
 
 
@@ -25,6 +27,10 @@ def run_destination_search_tool(
             message="DuckDuckGo search unavailable because langchain-community and ddgs are not installed.",
         )
     except Exception:
+        logger.warning(
+            "Web search (destination) failed unexpectedly; returning fallback",
+            exc_info=True,
+        )
         return _fallback_result(
             city="",
             query=query,
@@ -63,6 +69,10 @@ def run_web_search_tool(
             message="DuckDuckGo search unavailable because langchain-community and ddgs are not installed.",
         )
     except Exception:
+        logger.warning(
+            "Web search failed unexpectedly; returning fallback",
+            exc_info=True,
+        )
         return _fallback_result(
             city=normalized_city,
             query=query,

@@ -17,7 +17,11 @@ from __future__ import annotations
 
 from typing import Any
 
+import logging
+
 import httpx
+
+logger = logging.getLogger(__name__)
 
 _COMMONS_API = "https://commons.wikimedia.org/w/api.php"
 _DEFAULT_TIMEOUT = 15.0
@@ -75,6 +79,7 @@ def resolve_place_image(
             if owns_client:
                 http_client.close()
     except Exception:  # noqa: BLE001 - never crash the agent over an image
+        logger.warning("Wikimedia image lookup failed for %r", place_name, exc_info=True)
         return None
 
     return _pick_best_image(payload, normalized)

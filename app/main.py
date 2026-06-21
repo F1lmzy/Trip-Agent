@@ -1,4 +1,5 @@
 import contextlib
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -21,6 +22,8 @@ from app.schemas import (
 from app.tools.registry import list_tools as list_tool_metadata
 from app.tools.registry import tools_count
 
+logger = logging.getLogger(__name__)
+
 _STATIC_DIR = Path(__file__).parent / "static"
 
 
@@ -33,7 +36,7 @@ async def lifespan(app: FastAPI):
         async with mcp.session_manager.run():
             yield
     except Exception:
-        # If the MCP server cannot start, keep the REST API working.
+        logger.exception("MCP lifespan failed to start; continuing without MCP session manager")
         yield
 
 
@@ -48,7 +51,7 @@ def _mount_mcp() -> None:
 
         app.mount("/mcp", create_mcp_app())
     except Exception:
-        # MCP is optional; the REST API still works without it.
+        logger.exception("MCP mount failed; continuing without MCP endpoint")
         pass
 
 

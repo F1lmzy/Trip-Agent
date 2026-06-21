@@ -9,12 +9,15 @@ generation path. Handles two cases exactly as the monolithic orchestrator did:
 2. Fresh request: run the selected tools, save stable preferences, and
    generate the itinerary via the LLM/fallback path.
 
-No behavior change — the helpers are imported lazily from
-app.agent.orchestrator to avoid an import-time cycle.
+No behavior change — shared helpers now live in public app.agent modules so
+this agent does not depend on private orchestrator internals.
 """
 
 from __future__ import annotations
 
+from app.agent.response_builders import build_follow_up_response, save_stable_preferences
+from app.agent.service_utils import service_value
+from app.agent.tool_executor import execute_tools
 from app.agents.base import Agent, AgentContext
 from app.schemas import ChatResponse
 
@@ -23,21 +26,12 @@ class ItineraryAgent(Agent):
     name = "ItineraryAgent"
 
     def run(self, ctx: AgentContext) -> ChatResponse:
-        # Lazy imports avoid an import-time cycle: app.agent.orchestrator
-        # imports this package's supervisor at module load time.
-        from app.agent.orchestrator import (
-            _build_follow_up_response,
-            _execute_tools,
-            _save_stable_preferences,
-            _service_value,
-        )
-
         ctx.emit({"type": "agent_start", "agent": self.name})
 
         if ctx.parsed.is_follow_up:
             has_prior_context = ctx.memory.has_history(ctx.user_id)
             memory_used = ctx.user_memory.search_preferences(ctx.user_id, ctx.parsed.raw_message)
-            response = _build_follow_up_response(
+            response = build_follow_up_response(
                 ctx.parsed, ctx.plan, has_prior_context, memory_used
             )
             ctx.emit({"type": "agent_end", "agent": self.name})
@@ -45,12 +39,12 @@ class ItineraryAgent(Agent):
 
         memory_used = ctx.user_memory.search_preferences(ctx.user_id, ctx.parsed.raw_message)
         ctx.emit({"type": "tools_start"})
-        tool_outputs = _execute_tools(ctx.parsed, ctx.plan, ctx.services)
+        tool_outputs = execute_tools(ctx.parsed, ctx.plan, ctx.services)
         for tool_name in tool_outputs:
             ctx.emit({"type": "tool_end", "tool": tool_name, "status": "completed"})
         ctx.emit({"type": "tools_end"})
 
-        _save_stable_preferences(ctx.user_id, ctx.parsed, ctx.user_memory)
+        save_stable_preferences(ctx.user_id, ctx.parsed, ctx.user_memory)
 
         from app.agent.response_generator import generate_itinerary_response
 
@@ -59,8 +53,8 @@ class ItineraryAgent(Agent):
             plan=ctx.plan,
             tool_outputs=tool_outputs,
             memory_used=memory_used,
-            api_key=_service_value(ctx.services, "openrouter_api_key", "openrouter_api_key"),
-            model=_service_value(ctx.services, "openrouter_model", "openrouter_model"),
+            api_key=service_value(ctx.services, "openrouter_api_key", "openrouter_api_key"),
+            model=service_value(ctx.services, "openrouter_model", "openrouter_model"),
             client=ctx.services.openrouter_client,
         )
         ctx.emit({"type": "agent_end", "agent": self.name})

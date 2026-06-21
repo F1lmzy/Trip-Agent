@@ -1,6 +1,5 @@
+import concurrent.futures
 import json
-import queue
-import threading
 from typing import Any
 
 import httpx
@@ -52,6 +51,15 @@ def generate_itinerary_response(
         clarifying_question=None,
     )
 
+# Bounded thread pool for OpenRouter calls. Threads are reused across requests
+# so a timeout does not leave an accumulating trail of daemon threads. When a
+# timeout fires the worker thread returns to the pool once the HTTP call finishes
+# (subject to the httpx timeout in call_openrouter, default 120 s).
+_executor = concurrent.futures.ThreadPoolExecutor(
+    max_workers=4,
+    thread_name_prefix="openrouter",
+)
+
 
 def _call_openrouter_with_deadline(
     messages: list[dict[str, str]],
@@ -60,16 +68,10 @@ def _call_openrouter_with_deadline(
     client: httpx.Client | None,
     timeout_seconds: float = 45.0,
 ) -> dict[str, Any]:
-    result_queue: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=1)
-
-    def worker() -> None:
-        result_queue.put(call_openrouter(messages, api_key=api_key, model=model, client=client))
-
-    thread = threading.Thread(target=worker, daemon=True)
-    thread.start()
+    future = _executor.submit(call_openrouter, messages, api_key=api_key, model=model, client=client)
     try:
-        return result_queue.get(timeout=timeout_seconds)
-    except queue.Empty:
+        return future.result(timeout=timeout_seconds)
+    except concurrent.futures.TimeoutError:
         return {
             "status": "fallback_openrouter_timeout",
             "source": "fallback",

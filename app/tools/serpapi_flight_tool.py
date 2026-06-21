@@ -15,6 +15,7 @@ mock and real flight tools interchangeably.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Any
 
@@ -22,6 +23,8 @@ import httpx
 
 from app.config import get_settings
 from app.tools.budget_tool import _normalize_budget
+
+logger = logging.getLogger(__name__)
 
 _SERPAPI_ENDPOINT = "https://serpapi.com/search"
 _DEFAULT_TIMEOUT = 30.0
@@ -119,6 +122,7 @@ def run_serpapi_flight_tool(
     except httpx.HTTPError as error:
         return _error_result(normalized_from, normalized_to, f"serpapi_request_failed: {error}")
     except Exception as error:  # noqa: BLE001 - defensive: never crash the agent
+        logger.warning("SerpAPI flight search failed unexpectedly: %s", error)
         return _error_result(normalized_from, normalized_to, f"serpapi_unexpected: {error}")
 
     if payload.get("error"):

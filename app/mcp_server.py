@@ -33,16 +33,13 @@ mcp = FastMCP("Travel Agent Tools")
 
 # Module-level RAG tool instance, seeded lazily on first attraction query.
 _rag_tool: AttractionRagTool | None = None
-_rag_seeded = False
 
 
 def _get_seeded_rag_tool() -> AttractionRagTool:
-    global _rag_tool, _rag_seeded
+    global _rag_tool
     if _rag_tool is None:
         _rag_tool = AttractionRagTool()
-    if not _rag_seeded:
-        _rag_tool.seed()
-        _rag_seeded = True
+    _rag_tool.seed_if_needed()
     return _rag_tool
 
 

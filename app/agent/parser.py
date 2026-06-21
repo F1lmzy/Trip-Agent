@@ -129,19 +129,36 @@ def _extract_city(message: str, origin_city: str | None = None) -> str | None:
     # city (e.g. "to kyoto from singapore" -> Kyoto, "from london to milan"
     # -> Milan). The origin is never mistaken for the destination.
     origin_lower = (origin_city or "").strip().lower()
+    return (
+        _extract_route_city(message)
+        or _extract_reversed_city(message)
+        or _extract_verb_city(message, origin_lower)
+        or _extract_known_city(message, origin_lower)
+        or _extract_dynamic_city_phrase(message)
+    )
+
+
+def _known_city_or_candidate(candidate: str) -> str:
+    for city in KNOWN_CITIES:
+        if city.lower() == candidate.lower():
+            return city
+    return candidate
+
+
+def _extract_route_city(message: str) -> str | None:
     # Order 1: "from <origin> to <destination>".
     route_match = re.search(
         r"\bfrom\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)\s+to\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)",
         message,
         flags=re.IGNORECASE,
     )
-    if route_match:
-        dest = _clean_city_candidate(route_match.group(2))
-        if dest:
-            for city in KNOWN_CITIES:
-                if city.lower() == dest.lower():
-                    return city
-            return dest
+    if not route_match:
+        return None
+    dest = _clean_city_candidate(route_match.group(2))
+    return _known_city_or_candidate(dest) if dest else None
+
+
+def _extract_reversed_city(message: str) -> str | None:
     # Order 2: "to <destination> from <origin>" (reversed wording).
     # The destination capture excludes origin-marker verbs (flying/departing/
     # leaving) so "to Tokyo flying from London" yields Tokyo, not "Tokyo Flying".
@@ -150,26 +167,30 @@ def _extract_city(message: str, origin_city: str | None = None) -> str | None:
         message,
         flags=re.IGNORECASE,
     )
-    if reversed_match:
-        dest = _clean_city_candidate(reversed_match.group(1))
-        if dest:
-            for city in KNOWN_CITIES:
-                if city.lower() == dest.lower():
-                    return city
-            return dest
+    if not reversed_match:
+        return None
+    dest = _clean_city_candidate(reversed_match.group(1))
+    return _known_city_or_candidate(dest) if dest else None
 
+
+def _extract_verb_city(message: str, origin_lower: str) -> str | None:
     # "<verb> to <destination>" with no explicit origin (e.g. "trip to tokyo",
     # "fly to paris"). Only accept known cities here so common verbs like
     # "to plan" / "to visit" are not mistaken for a destination. Skip the
     # origin so "flying from tokyo" (no destination) does not pick Tokyo.
     to_match = re.search(r"\bto\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)", message, flags=re.IGNORECASE)
-    if to_match:
-        candidate = _clean_city_candidate(to_match.group(1))
-        if candidate and candidate.lower() != origin_lower:
-            for city in KNOWN_CITIES:
-                if city.lower() == candidate.lower():
-                    return city
+    if not to_match:
+        return None
+    candidate = _clean_city_candidate(to_match.group(1))
+    if not candidate or candidate.lower() == origin_lower:
+        return None
+    for city in KNOWN_CITIES:
+        if city.lower() == candidate.lower():
+            return city
+    return None
 
+
+def _extract_known_city(message: str, origin_lower: str) -> str | None:
     # Known-cities fallback: the first known city mentioned. Skip the origin so
     # a message that names only an origin ("I'm flying from Singapore, where
     # should I go?") does not treat that origin as the destination — instead
@@ -179,7 +200,10 @@ def _extract_city(message: str, origin_city: str | None = None) -> str | None:
             continue
         if re.search(rf"\b{re.escape(city)}\b", message, flags=re.IGNORECASE):
             return city
+    return None
 
+
+def _extract_dynamic_city_phrase(message: str) -> str | None:
     patterns = [
         r"(?:trip to|visit|in|for)\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)",
     ]
@@ -310,8 +334,6 @@ def _extract_date_range(message: str) -> tuple[str | None, str | None]:
     when omitted). Ordinal suffixes (st/nd/rd/th) are accepted on any day.
     Returns (departure_iso, return_iso); each may be None independently.
     """
-    from datetime import datetime
-
     month_group = rf"(?:{_MONTHS})"
     # Two full month-day anchors, separated by 'to' / '-' / '–'.
     full = re.search(
@@ -320,18 +342,7 @@ def _extract_date_range(message: str) -> tuple[str | None, str | None]:
         flags=re.IGNORECASE,
     )
     if full:
-        a, b = full.group(1), full.group(2)
-        ma = _month_day(a)
-        mb = _month_day(b)
-        if not ma or not mb:
-            return None, None
-        dep_year = _resolve_year(ma[0], ma[1])
-        dep = _parse_month_day(a, dep_year)
-        # Return year is chosen relative to the departure so the return date
-        # is never before the departure (handles 'June 3 to July 10' when
-        # June 3 has already passed this year, and 'Dec 28 to Jan 5').
-        ret = _return_year_iso(mb[0], mb[1], dep)
-        return dep, ret
+        return _parse_full_month_range(full.group(1), full.group(2))
 
     # First anchor has a month; second is a bare day sharing that month.
     partial = re.search(
@@ -340,29 +351,52 @@ def _extract_date_range(message: str) -> tuple[str | None, str | None]:
         flags=re.IGNORECASE,
     )
     if partial:
-        month_name, d1_raw, d2_raw = partial.group(1), partial.group(2), partial.group(3)
-        d1 = re.sub(r"(?<=\d)(?:st|nd|rd|th)\b", "", d1_raw, flags=re.IGNORECASE)
-        d2 = re.sub(r"(?<=\d)(?:st|nd|rd|th)\b", "", d2_raw, flags=re.IGNORECASE)
-        md = _month_day(f"{month_name} {d1}")
-        if not md:
-            return None, None
-        m = md[0]
-        from datetime import date
-
-        year = _resolve_year(m, int(d1))
-        dep = date(year, m, int(d1)).isoformat()
-        ret_year, ret_month = year, m
-        if int(d2) < int(d1):
-            ret_month = m % 12 + 1
-            if ret_month == 1:
-                ret_year += 1
-        try:
-            ret = date(ret_year, ret_month, int(d2)).isoformat()
-        except ValueError:
-            ret = None
-        return dep, ret
+        return _parse_single_month_range(partial.group(1), partial.group(2), partial.group(3))
 
     return None, None
+
+
+def _parse_full_month_range(start_token: str, end_token: str) -> tuple[str | None, str | None]:
+    ma = _month_day(start_token)
+    mb = _month_day(end_token)
+    if not ma or not mb:
+        return None, None
+    dep_year = _resolve_year(ma[0], ma[1])
+    dep = _parse_month_day(start_token, dep_year)
+    # Return year is chosen relative to the departure so the return date
+    # is never before the departure (handles 'June 3 to July 10' when
+    # June 3 has already passed this year, and 'Dec 28 to Jan 5').
+    ret = _return_year_iso(mb[0], mb[1], dep)
+    return dep, ret
+
+
+def _parse_single_day_range(day_token: str) -> int:
+    cleaned = re.sub(r"(?<=\d)(?:st|nd|rd|th)\b", "", day_token, flags=re.IGNORECASE)
+    return int(cleaned)
+
+
+def _parse_single_month_range(month_name: str, start_day_token: str, end_day_token: str) -> tuple[str | None, str | None]:
+    from datetime import date
+
+    d1 = _parse_single_day_range(start_day_token)
+    d2 = _parse_single_day_range(end_day_token)
+    md = _month_day(f"{month_name} {d1}")
+    if not md:
+        return None, None
+    m = md[0]
+
+    year = _resolve_year(m, d1)
+    dep = date(year, m, d1).isoformat()
+    ret_year, ret_month = year, m
+    if d2 < d1:
+        ret_month = m % 12 + 1
+        if ret_month == 1:
+            ret_year += 1
+    try:
+        ret = date(ret_year, ret_month, d2).isoformat()
+    except ValueError:
+        ret = None
+    return dep, ret
 
 
 def _extract_departure_date(message: str) -> str | None:

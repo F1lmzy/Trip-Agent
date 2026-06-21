@@ -11,8 +11,9 @@ All HTTP is mocked via httpx.MockTransport — no real network, no SerpAPI quota
 
 import httpx
 
-from app.agent.orchestrator import AgentServices, _attach_images, _run_flight, _run_hotel
+from app.agent.orchestrator import AgentServices
 from app.agent.parser import ParsedRequest
+from app.agent.tool_executor import attach_images, run_flight, run_hotel
 from app.tools.serpapi_flight_tool import run_serpapi_flight_tool
 from app.tools.serpapi_hotel_tool import run_serpapi_hotel_tool
 from tests.fakes import FakeImageClient
@@ -93,7 +94,7 @@ def test_run_hotel_uses_serpapi_when_key_present_and_ok():
         use_environment=False,
     )
 
-    result = _run_hotel(parsed, services)
+    result = run_hotel(parsed, services)
 
     assert result["tool_name"] == "serpapi_hotel_tool"
     assert result["status"] == "ok"
@@ -109,7 +110,7 @@ def test_run_hotel_falls_back_to_mock_when_key_absent():
         use_environment=False,
     )
 
-    result = _run_hotel(parsed, services)
+    result = run_hotel(parsed, services)
 
     # Mock hotel tool returns tool_name "hotel_tool" (not serpapi).
     assert result["tool_name"] == "hotel_tool"
@@ -126,7 +127,7 @@ def test_run_hotel_falls_back_to_mock_on_serpapi_error():
         use_environment=False,
     )
 
-    result = _run_hotel(parsed, services)
+    result = run_hotel(parsed, services)
 
     # SerpAPI errored -> fallback to mock.
     assert result["tool_name"] == "hotel_tool"
@@ -139,14 +140,14 @@ def test_run_hotel_falls_back_to_mock_on_serpapi_no_results(monkeypatch):
     def _no_results(*args, **kwargs):
         return {"tool_name": "serpapi_hotel_tool", "status": "no_results", "results": []}
 
-    monkeypatch.setattr("app.agent.orchestrator.run_serpapi_hotel_tool", _no_results)
+    monkeypatch.setattr("app.agent.tool_executor.run_serpapi_hotel_tool", _no_results)
     services = AgentServices(
         serpapi_api_key="fake-key",
         image_client=FakeImageClient(),
         use_environment=False,
     )
 
-    result = _run_hotel(parsed, services)
+    result = run_hotel(parsed, services)
     assert result["tool_name"] == "hotel_tool"  # fell back to mock
 
 
@@ -162,7 +163,7 @@ def test_run_flight_uses_serpapi_when_key_present_and_ok():
         use_environment=False,
     )
 
-    result = _run_flight(parsed, services)
+    result = run_flight(parsed, services)
 
     assert result["tool_name"] == "serpapi_flight_tool"
     assert result["status"] == "ok"
@@ -180,7 +181,7 @@ def test_run_flight_falls_back_to_mock_when_key_absent():
         use_environment=False,
     )
 
-    result = _run_flight(parsed, services)
+    result = run_flight(parsed, services)
 
     assert result["tool_name"] == "flight_tool"  # mock
     assert result["status"] == "ok"
@@ -195,7 +196,7 @@ def test_run_flight_one_way_omits_return_flights():
         use_environment=False,
     )
 
-    result = _run_flight(parsed, services)
+    result = run_flight(parsed, services)
 
     assert result["tool_name"] == "flight_tool"
     assert result["status"] == "ok"
@@ -212,7 +213,7 @@ def test_run_flight_round_trip_produces_return_flights():
         use_environment=False,
     )
 
-    result = _run_flight(parsed, services)
+    result = run_flight(parsed, services)
 
     assert result["results"]["return_flights"], "round-trip must produce return flights"
 
@@ -230,7 +231,7 @@ def test_run_flight_uses_explicit_date_range():
         use_environment=False,
     )
 
-    result = _run_flight(parsed, services)
+    result = run_flight(parsed, services)
 
     assert result["status"] == "ok"
     dep = result["results"]["departure_flights"][0]
@@ -252,7 +253,7 @@ def test_run_flight_explicit_dates_override_duration():
         use_environment=False,
     )
 
-    result = _run_flight(parsed, services)
+    result = run_flight(parsed, services)
 
     ret = result["results"]["return_flights"][0]
     assert ret["departure"].startswith("2026-06-25")
@@ -267,7 +268,7 @@ def test_run_flight_falls_back_to_mock_on_serpapi_error():
         use_environment=False,
     )
 
-    result = _run_flight(parsed, services)
+    result = run_flight(parsed, services)
     assert result["tool_name"] == "flight_tool"  # mock fallback
     assert result["status"] == "ok"
 
@@ -306,7 +307,7 @@ def test_attach_images_adds_image_url_to_attractions():
     }
     services = AgentServices(image_client=_image_client_returning_url("https://upload.wikimedia.org/a.jpg"), use_environment=False)
 
-    _attach_images(tool_outputs, services)
+    attach_images(tool_outputs, services)
 
     assert tool_outputs["attraction_rag_tool"]["results"][0]["image_url"] == "https://upload.wikimedia.org/a.jpg"
     assert tool_outputs["attraction_rag_tool"]["results"][1]["image_url"] == "https://upload.wikimedia.org/a.jpg"
@@ -321,7 +322,7 @@ def test_attach_images_adds_image_url_to_hotels():
     }
     services = AgentServices(image_client=_image_client_returning_url("https://upload.wikimedia.org/h.jpg"), use_environment=False)
 
-    _attach_images(tool_outputs, services)
+    attach_images(tool_outputs, services)
 
     assert tool_outputs["hotel_tool"]["results"][0]["image_url"] == "https://upload.wikimedia.org/h.jpg"
 
@@ -336,7 +337,7 @@ def test_attach_images_sets_none_when_no_image_found():
     # FakeImageClient returns an empty Commons payload -> None.
     services = AgentServices(image_client=FakeImageClient(), use_environment=False)
 
-    _attach_images(tool_outputs, services)
+    attach_images(tool_outputs, services)
 
     assert tool_outputs["attraction_rag_tool"]["results"][0]["image_url"] is None
 
@@ -350,7 +351,7 @@ def test_attach_images_skips_items_without_name():
     }
     services = AgentServices(image_client=FakeImageClient(), use_environment=False)
 
-    _attach_images(tool_outputs, services)
+    attach_images(tool_outputs, services)
 
     # No name -> no image lookup, no image_url key added.
     assert "image_url" not in tool_outputs["attraction_rag_tool"]["results"][0]
@@ -365,6 +366,6 @@ def test_attach_images_does_not_overwrite_existing_image_url():
     }
     services = AgentServices(image_client=_image_client_returning_url("https://upload.wikimedia.org/other.jpg"), use_environment=False)
 
-    _attach_images(tool_outputs, services)
+    attach_images(tool_outputs, services)
 
     assert tool_outputs["attraction_rag_tool"]["results"][0]["image_url"] == "https://already.set/img.jpg"

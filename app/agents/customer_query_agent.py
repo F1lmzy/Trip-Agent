@@ -12,6 +12,7 @@ preserves the original clarification behavior exactly.
 
 from __future__ import annotations
 
+from app.agent.response_builders import build_clarification_response
 from app.agents.base import Agent, AgentContext
 from app.schemas import ChatResponse
 
@@ -20,11 +21,7 @@ class CustomerQueryAgent(Agent):
     name = "CustomerQueryAgent"
 
     def run(self, ctx: AgentContext) -> ChatResponse:
-        # Lazy import avoids an import-time cycle with app.agent.orchestrator,
-        # which imports this package's supervisor.
-        from app.agent.orchestrator import _build_clarification_response
-
         ctx.emit({"type": "agent_start", "agent": self.name})
-        response = _build_clarification_response(ctx.plan)
+        response = build_clarification_response(ctx.plan)
         ctx.emit({"type": "agent_end", "agent": self.name})
         return response
