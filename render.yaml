@@ -5,11 +5,16 @@ services:
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.11
       - key: OPENROUTER_MODEL
         value: nvidia/nemotron-3-ultra
       - key: OPENROUTER_EMBEDDING_MODEL
         value: nvidia/llama-nemotron-embed-vl-1b-v2:free
+      - key: OPENROUTER_TIMEOUT_SECONDS
+        value: "120"
       - key: CHROMA_PATH
         value: /opt/render/project/src/chroma_db
       - key: OPENROUTER_API_KEY
